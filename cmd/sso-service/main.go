@@ -2,8 +2,11 @@ package main
 
 import (
 	"os"
+	"os/signal"
+	ssoapp "sso-service/internal/app"
 	"sso-service/internal/config"
-	"sso-service/internal/logger"
+	"sso-service/internal/core/logger"
+	"syscall"
 
 	"go.uber.org/zap"
 )
@@ -32,8 +35,20 @@ func main() {
 		return
 	}
 
-	_ = cfg
-	// TODO: init app
+	// Канал для graceful shutdown
+	done := make(chan os.Signal, 1)
+	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
-	// TODO: start grps
+	// инициализируем сервер sso
+	application := ssoapp.New(log, cfg.GRPSServer.Port, cfg.DataBase.DSN(), cfg.JWT.AccessTokenTTL)
+
+	// запускаем gRPC сервер
+	go application.GRPCServer.MustRun()
+
+	// Ожидание сигнала завершения
+	<-done
+
+	// Graceful shutdown
+	application.GRPCServer.Stop()
+	log.Info("Gracefully stopped")
 }
