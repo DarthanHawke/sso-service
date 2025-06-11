@@ -12,7 +12,8 @@ import (
 )
 
 const (
-	errId = -1
+	errIdInt    = -1
+	errIdString = ""
 )
 
 type UserService struct {
@@ -49,52 +50,52 @@ func NewUserService(
 	}
 }
 
-func (s *UserService) RegisterUser(ctx context.Context, email, password, fullName string) (int64, error) {
+func (s *UserService) Register(ctx context.Context, email, password, fullName string) (int64, error) {
 	//TO DO: use logger
 
 	// Валидация
 	if err := validator.ValidateEmail(email); err != nil {
-		return errId, err
+		return errIdInt, err
 	}
 
 	if err := validator.ValidatePassword(password); err != nil {
-		return errId, err
+		return errIdInt, err
 	}
 
 	// Хеширование пароля
 	passwordHash, err := s.hasher.Hash(password)
 	if err != nil {
-		return errId, ssoerrors.ErrInternal
+		return errIdInt, ssoerrors.ErrInternal
 	}
 
 	// Создание пользователя
 	id, err := s.userManage.CreateUser(ctx, email, passwordHash, fullName)
 	if err != nil {
 		if errors.Is(err, ssoerrors.ErrUserExists) {
-			return errId, ssoerrors.ErrUserExists
+			return errIdInt, ssoerrors.ErrUserExists
 		}
-		return errId, ssoerrors.ErrInternal
+		return errIdInt, ssoerrors.ErrInternal
 	}
 	return id, nil
 }
 
 // Аутентификация пользователя
-func (s *UserService) Login(ctx context.Context, email, password string) (*models.Session, error) {
+func (s *UserService) Login(ctx context.Context, email, password string) (string, error) {
 	//TO DO: use logger
 
 	user, err := s.userGet.GetUserByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, ssoerrors.ErrUserNotFound) {
-			return nil, ssoerrors.ErrInvalidCredentials
+			return errIdString, ssoerrors.ErrInvalidCredentials
 		}
-		return nil, ssoerrors.ErrInternal
+		return errIdString, ssoerrors.ErrInternal
 	}
 
 	// Проверка пароля
 	if !s.hasher.Compare(password, user.PasswordHash) {
-		return nil, ssoerrors.ErrInvalidCredentials
+		return errIdString, ssoerrors.ErrInvalidCredentials
 	}
-	return nil, nil
+	return user.ID, nil
 }
 
 // Получение профиля пользователя
@@ -117,10 +118,7 @@ func (s *UserService) GetProfile(ctx context.Context, userID string) (*models.Us
 // Обновление профиля
 func (s *UserService) UpdateProfile(
 	ctx context.Context,
-	userID string,
-	email string,
-	password string,
-	fulName string,
+	userID, email, password, fulName string,
 ) error {
 	//TO DO: use logger
 
