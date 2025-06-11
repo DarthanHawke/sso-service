@@ -5,30 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	ssoerrors "sso-service/internal/lib/errors"
 	"sso-service/internal/models"
 	"sso-service/internal/permissions"
 
 	"github.com/lib/pq"
 )
-
-var (
-	ErrRoleExists      = errors.New("role already exists")
-	ErrRoleNotFound    = errors.New("role not found")
-	ErrRoleNotAssigned = errors.New("role is not assigned to the user")
-)
-
-type Role interface {
-	// Роли
-	InitRoles() error
-	CreateRole(ctx context.Context, name string, permissions []string) error
-	GetRole(ctx context.Context, roleID string) (models.Role, error)
-	AssignRoleToUser(ctx context.Context, userID, roleID string) error
-	RevokeRoleFromUser(ctx context.Context, userID, roleID string) error
-
-	// Права
-	CheckUserPermission(ctx context.Context, userID, permission string) (bool, error)
-	ListUserPermissions(ctx context.Context, userID string) ([]string, error)
-}
 
 type RoleDataBase struct {
 	db *Database
@@ -81,7 +63,7 @@ func (RoleDB *RoleDataBase) CreateRole(
 	if err != nil {
 		var pgErr *pq.Error
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" { // unique_violation
-			return fmt.Errorf("%w", ErrRoleExists)
+			return fmt.Errorf("%w", ssoerrors.ErrRoleExists)
 		}
 		return fmt.Errorf("%w", err)
 	}
@@ -100,7 +82,7 @@ func (RoleDB *RoleDataBase) GetRole(ctx context.Context, roleID string) (models.
     `, roleID)
 
 	if errors.Is(err, sql.ErrNoRows) {
-		return models.Role{}, fmt.Errorf("%w", ErrRoleNotFound)
+		return models.Role{}, fmt.Errorf("%w", ssoerrors.ErrRoleNotFound)
 	}
 
 	if err != nil {
@@ -142,7 +124,7 @@ func (RoleDB *RoleDataBase) RevokeRoleFromUser(ctx context.Context, userID, role
 	}
 
 	if rowsAffected == 0 {
-		return fmt.Errorf("%w", ErrRoleNotAssigned)
+		return fmt.Errorf("%w", ssoerrors.ErrRoleNotAssigned)
 	}
 
 	return nil

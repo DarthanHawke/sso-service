@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 	"sso-service/internal/config"
-	"sso-service/internal/core/logger"
+	"sso-service/internal/lib/logger"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"

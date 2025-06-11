@@ -5,7 +5,7 @@ import (
 	"os/signal"
 	ssoapp "sso-service/internal/app"
 	"sso-service/internal/config"
-	"sso-service/internal/core/logger"
+	"sso-service/internal/lib/logger"
 	"syscall"
 
 	"go.uber.org/zap"

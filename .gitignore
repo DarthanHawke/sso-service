@@ -10,6 +10,9 @@
 .env.development
 .env.production
 
+# pem
+.pem
+
 # logs
 .log
 logs

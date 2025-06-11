@@ -5,41 +5,22 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	ssoerrors "sso-service/internal/lib/errors"
 	"sso-service/internal/models"
 	"time"
 )
 
-var (
-	ErrSessionNotFound = errors.New("session not found")
-)
-
-type Sessions interface {
-	// Создание
-	CreateSession(ctx context.Context, userID, refreshToken string, expiresAt time.Time) error
-
-	// Чтение
-	GetSessionByToken(ctx context.Context, refreshToken string) (models.Session, error)
-	GetUserSessions(ctx context.Context, userID string) ([]models.Session, error)
-
-	// Удаление
-	DeleteSession(ctx context.Context, sessionID string) error
-	DeleteAllUserSessions(ctx context.Context, userID string) error
-
-	// Проверки
-	IsSessionValid(ctx context.Context, refreshToken string) (bool, error)
-}
-
-type SessionsDataBase struct {
+type SessionDataBase struct {
 	db *Database
 	// TO DO: Redis Cache
 }
 
-func (sessionsDB *SessionsDataBase) CreateSession(
+func (sessionDB *SessionDataBase) CreateSession(
 	ctx context.Context,
 	userID, refreshToken string,
 	expiresAt time.Time,
 ) error {
-	stmt, err := sessionsDB.db.Prepare(`
+	stmt, err := sessionDB.db.Prepare(`
         INSERT INTO sessions (
             id, 
             user_id, 
@@ -71,12 +52,12 @@ func (sessionsDB *SessionsDataBase) CreateSession(
 }
 
 // GetSessionByToken возвращает сессию по refresh-токену
-func (sessionsDB *SessionsDataBase) GetSessionByToken(
+func (sessionDB *SessionDataBase) GetSessionByToken(
 	ctx context.Context,
 	refreshToken string,
 ) (models.Session, error) {
 	var session models.Session
-	err := sessionsDB.db.GetContext(ctx, &session, `
+	err := sessionDB.db.GetContext(ctx, &session, `
         SELECT 
             id, 
             user_id, 
@@ -91,7 +72,7 @@ func (sessionsDB *SessionsDataBase) GetSessionByToken(
 	)
 
 	if errors.Is(err, sql.ErrNoRows) {
-		return models.Session{}, fmt.Errorf("%w", ErrSessionNotFound)
+		return models.Session{}, fmt.Errorf("%w", ssoerrors.ErrSessionNotFound)
 	}
 
 	if err != nil {
@@ -102,14 +83,14 @@ func (sessionsDB *SessionsDataBase) GetSessionByToken(
 }
 
 // GetUserSessions возвращает все активные сессии пользователя
-func (sessionsDB *SessionsDataBase) GetUserSessions(
+func (sessionDB *SessionDataBase) GetUserSessions(
 	ctx context.Context,
 	userID string,
 ) ([]models.Session, error) {
 	const op = "repository.GetUserSessions"
 
 	var sessions []models.Session
-	err := sessionsDB.db.SelectContext(ctx, &sessions, `
+	err := sessionDB.db.SelectContext(ctx, &sessions, `
         SELECT 
             id, 
             user_id, 
@@ -132,8 +113,8 @@ func (sessionsDB *SessionsDataBase) GetUserSessions(
 }
 
 // DeleteSession удаляет конкретную сессию по ID
-func (sessionsDB *SessionsDataBase) DeleteSession(ctx context.Context, sessionID string) error {
-	result, err := sessionsDB.db.ExecContext(ctx, `
+func (sessionDB *SessionDataBase) DeleteSession(ctx context.Context, sessionID string) error {
+	result, err := sessionDB.db.ExecContext(ctx, `
         DELETE FROM sessions 
         WHERE id = $1`,
 		sessionID,
@@ -149,15 +130,15 @@ func (sessionsDB *SessionsDataBase) DeleteSession(ctx context.Context, sessionID
 	}
 
 	if rowsAffected == 0 {
-		return fmt.Errorf("%w", ErrSessionNotFound)
+		return fmt.Errorf("%w", ssoerrors.ErrSessionNotFound)
 	}
 
 	return nil
 }
 
 // DeleteAllUserSessions удаляет все сессии пользователя
-func (sessionsDB *SessionsDataBase) DeleteAllUserSessions(ctx context.Context, userID string) error {
-	_, err := sessionsDB.db.ExecContext(ctx, `
+func (sessionDB *SessionDataBase) DeleteAllUserSessions(ctx context.Context, userID string) error {
+	_, err := sessionDB.db.ExecContext(ctx, `
         DELETE FROM sessions 
         WHERE user_id = $1`,
 		userID,
@@ -171,9 +152,9 @@ func (sessionsDB *SessionsDataBase) DeleteAllUserSessions(ctx context.Context, u
 }
 
 // IsSessionValid проверяет валидность сессии
-func (sessionsDB *SessionsDataBase) IsSessionValid(ctx context.Context, refreshToken string) (bool, error) {
+func (sessionDB *SessionDataBase) IsSessionValid(ctx context.Context, refreshToken string) (bool, error) {
 	var exists bool
-	err := sessionsDB.db.GetContext(ctx, &exists, `
+	err := sessionDB.db.GetContext(ctx, &exists, `
         SELECT EXISTS (
             SELECT 1 FROM sessions 
             WHERE refresh_token = $1 AND expires_at > NOW()

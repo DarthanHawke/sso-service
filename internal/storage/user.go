@@ -5,37 +5,16 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	ssoerrors "sso-service/internal/lib/errors"
 	"sso-service/internal/models"
 
 	"github.com/lib/pq"
 )
 
-type User interface {
-	// Создание
-	CreateUser(ctx context.Context, email, passwordHash, fullName string) (int64, error)
-	// Чтение
-	GetUserByID(ctx context.Context, userID string) (models.User, error)
-	GetUserByEmail(ctx context.Context, email string) (models.User, error)
-	GetListUsers(ctx context.Context, limit, offset int) ([]models.User, error)
-
-	// Обновление
-	UpdateUser(ctx context.Context, userID string, email, fullName string) error
-	UpdatePassword(ctx context.Context, userID, newPasswordHash string) error
-	// Удаление
-	DeleteUser(ctx context.Context, userID string) error
-	// Списки
-}
-
 type UserDataBase struct {
 	db *Database
 	// TO DO: Redis Cache
 }
-
-var (
-	ErrNotFound     = errors.New("not found")
-	ErrUserExists   = errors.New("user already exists")
-	ErrUserNotFound = errors.New("user not found")
-)
 
 // CreateUser создаёт нового пользователя models.User, используя email, passwordHash, fullName string, возвращает userID
 func (userDB *UserDataBase) CreateUser(ctx context.Context, email, passwordHash, fullName string) (int64, error) {
@@ -48,7 +27,7 @@ func (userDB *UserDataBase) CreateUser(ctx context.Context, email, passwordHash,
 	if err != nil {
 		var pqErr *pq.Error
 		if errors.As(err, &pqErr) && pqErr.Code == "23505" { // 23505 = unique_violation
-			return 0, fmt.Errorf("%w", ErrUserExists)
+			return 0, fmt.Errorf("%w", ssoerrors.ErrUserExists)
 		}
 
 		return 0, fmt.Errorf("%w", err)
@@ -85,7 +64,7 @@ func (userDB *UserDataBase) GetUserByID(ctx context.Context, userID string) (mod
 	err = row.Scan(&user.ID, &user.Email, &user.PasswordHash)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return models.User{}, fmt.Errorf("%w", ErrUserNotFound)
+			return models.User{}, fmt.Errorf("%w", ssoerrors.ErrUserNotFound)
 		}
 
 		return models.User{}, fmt.Errorf("%w", err)
@@ -117,7 +96,7 @@ func (userDB *UserDataBase) GetUserByEmail(ctx context.Context, email string) (m
 	err = row.Scan(&user.ID, &user.Email, &user.PasswordHash)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return models.User{}, fmt.Errorf("%w", ErrUserNotFound)
+			return models.User{}, fmt.Errorf("%w", ssoerrors.ErrUserNotFound)
 		}
 
 		return models.User{}, fmt.Errorf("%w", err)
@@ -127,8 +106,8 @@ func (userDB *UserDataBase) GetUserByEmail(ctx context.Context, email string) (m
 }
 
 // GetListUsers возвращает список всех пользователей
-func (userDB *UserDataBase) GetListUsers(ctx context.Context, limit, offset int) ([]User, error) {
-	var users []User
+func (userDB *UserDataBase) GetListUsers(ctx context.Context, limit, offset int) ([]models.User, error) {
+	var users []models.User
 	err := userDB.db.SelectContext(ctx, &users, `
         SELECT 
         	email, 
@@ -167,7 +146,7 @@ func (userDB *UserDataBase) UpdateUser(ctx context.Context, userID string, email
 		return fmt.Errorf("failed to check rows affected: %w", err)
 	}
 	if rowsAffected == 0 {
-		return ErrNotFound
+		return ssoerrors.ErrNotFound
 	}
 
 	return nil
@@ -190,7 +169,7 @@ func (userDB *UserDataBase) UpdatePassword(ctx context.Context, userID, newPassw
 		return fmt.Errorf("failed to check rows affected: %w", err)
 	}
 	if rowsAffected == 0 {
-		return ErrNotFound
+		return ssoerrors.ErrNotFound
 	}
 
 	return nil
