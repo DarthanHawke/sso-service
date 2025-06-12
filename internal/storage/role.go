@@ -54,8 +54,8 @@ func (RoleDB *RoleDataBase) CreateRole(
 	ctx context.Context,
 	name string,
 	permissions []string,
-) error {
-	_, err := RoleDB.db.ExecContext(ctx, `
+) (int64, error) {
+	result, err := RoleDB.db.ExecContext(ctx, `
         INSERT INTO roles (id, name, permissions)
         VALUES (gen_random_uuid(), $1, $2)
     `, name, pq.Array(permissions)) // pq.Array для массивов PostgreSQL
@@ -63,12 +63,16 @@ func (RoleDB *RoleDataBase) CreateRole(
 	if err != nil {
 		var pgErr *pq.Error
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" { // unique_violation
-			return fmt.Errorf("%w", ssoerrors.ErrRoleExists)
+			return 0, fmt.Errorf("%w", ssoerrors.ErrRoleExists)
 		}
-		return fmt.Errorf("%w", err)
+		return 0, fmt.Errorf("%w", err)
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("%w", err)
 	}
 
-	return nil
+	return id, nil
 }
 
 // GetRole возвращает роль по ID
@@ -93,7 +97,7 @@ func (RoleDB *RoleDataBase) GetRole(ctx context.Context, roleID string) (models.
 }
 
 // AssignRoleToUser назначает роль пользователю
-func (RoleDB *RoleDataBase) AssignRoleToUser(ctx context.Context, userID, roleID string) error {
+func (RoleDB *RoleDataBase) AssignRoleToUser(ctx context.Context, userID, roleID int64) error {
 	_, err := RoleDB.db.ExecContext(ctx, `
         INSERT INTO user_roles (user_id, role_id)
         VALUES ($1, $2)
@@ -108,7 +112,7 @@ func (RoleDB *RoleDataBase) AssignRoleToUser(ctx context.Context, userID, roleID
 }
 
 // RevokeRoleFromUser отзывает роль у пользователя
-func (RoleDB *RoleDataBase) RevokeRoleFromUser(ctx context.Context, userID, roleID string) error {
+func (RoleDB *RoleDataBase) RevokeRoleFromUser(ctx context.Context, userID, roleID int64) error {
 	result, err := RoleDB.db.ExecContext(ctx, `
         DELETE FROM user_roles
         WHERE user_id = $1 AND role_id = $2
@@ -131,7 +135,7 @@ func (RoleDB *RoleDataBase) RevokeRoleFromUser(ctx context.Context, userID, role
 }
 
 // CheckUserPermission проверяет наличие права у пользователя
-func (RoleDB *RoleDataBase) CheckUserPermission(ctx context.Context, userID, permission string) (bool, error) {
+func (RoleDB *RoleDataBase) CheckUserPermission(ctx context.Context, userID int64, permission string) (bool, error) {
 	var exists bool
 	err := RoleDB.db.GetContext(ctx, &exists, `
         SELECT EXISTS (
@@ -149,7 +153,7 @@ func (RoleDB *RoleDataBase) CheckUserPermission(ctx context.Context, userID, per
 }
 
 // ListUserPermissions возвращает все права пользователя
-func (RoleDB *RoleDataBase) ListUserPermissions(ctx context.Context, userID string) ([]string, error) {
+func (RoleDB *RoleDataBase) ListUserPermissions(ctx context.Context, userID int64) ([]string, error) {
 	var permissions []string
 	err := RoleDB.db.SelectContext(ctx, &permissions, `
         SELECT DISTINCT unnest(r.permissions)

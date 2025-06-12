@@ -14,6 +14,10 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	nilToken = ""
+)
+
 type SessionService struct {
 	logger        *zap.Logger
 	sessionManage SessionManage
@@ -24,14 +28,15 @@ type SessionService struct {
 }
 
 type SessionManage interface {
-	CreateSession(ctx context.Context, userID, refreshToken string, expiresAt time.Time) error
-	DeleteSession(ctx context.Context, sessionID string) error
-	DeleteAllUserSessions(ctx context.Context, userID string) error
+	CreateSession(ctx context.Context, userID int64, refreshToken string, expiresAt time.Time) error
+	DeleteSession(ctx context.Context, sessionID int64) error
+	DeleteAllUserSessions(ctx context.Context, userID int64) error
 }
 
 type SessionGet interface {
 	GetSessionByToken(ctx context.Context, refreshToken string) (models.Session, error)
-	GetUserSessions(ctx context.Context, userID string) ([]models.Session, error)
+	GetSessionByUserId(ctx context.Context, userID int64) (models.Session, error)
+	GetUserSessions(ctx context.Context, userID int64) ([]models.Session, error)
 	IsSessionValid(ctx context.Context, refreshToken string) (bool, error)
 }
 
@@ -54,63 +59,65 @@ func NewSessionService(
 }
 
 // Создание сессии
-func (s *SessionService) CreateSession(ctx context.Context, userID string) (models.Session, error) {
+func (s *SessionService) CreateSession(ctx context.Context, userID int64) (string, string, error) {
 	//TO DO: use logger
 
 	// Генерация токенов
 	refreshToken, err := s.jwtManager.GenerateRefreshToken()
 	if err != nil {
-		return models.Session{}, ssoerrors.ErrInternal
+		return nilToken, nilToken, ssoerrors.ErrInternal
+	}
+	accessToken, err := s.jwtManager.GenerateAccessToken(userID)
+	if err != nil {
+		return nilToken, nilToken, ssoerrors.ErrInternal
 	}
 
 	// Хеширование токена
-	refreshToken, err = s.hasher.Hash(refreshToken)
+	refreshTokenHash, err := s.hasher.Hash(refreshToken)
 	if err != nil {
-		return models.Session{}, ssoerrors.ErrInternal
+		return nilToken, nilToken, ssoerrors.ErrInternal
 	}
 
 	expiresAt := time.Now().Add(s.tokenTTL)
 
-	// Сохранение сессии
-	session := models.Session{
-		UserID:           userID,
-		RefreshTokenHash: refreshToken,
-		ExpiresAt:        expiresAt,
+	if err := s.sessionManage.CreateSession(ctx, userID, refreshTokenHash, expiresAt); err != nil {
+		return nilToken, nilToken, ssoerrors.ErrInternal
 	}
 
-	if err := s.sessionManage.CreateSession(ctx, userID, refreshToken, expiresAt); err != nil {
-		return models.Session{}, ssoerrors.ErrInternal
-	}
-
-	return session, nil
+	return accessToken, refreshToken, nil
 }
 
 // Обновление сессии
 func (s *SessionService) RefreshSession(
 	ctx context.Context,
 	refreshToken string,
-) (models.Session, error) {
+	userID int64,
+) (string, string, error) {
 	//TO DO: use logger
 
-	oldSession, err := s.sessionGet.GetSessionByToken(ctx, refreshToken)
+	oldSession, err := s.sessionGet.GetSessionByUserId(ctx, userID)
 	if err != nil {
 		if errors.Is(err, ssoerrors.ErrSessionNotFound) {
-			return models.Session{}, ssoerrors.ErrInvalidToken
+			return nilToken, nilToken, ssoerrors.ErrInvalidToken
 		}
-		return models.Session{}, ssoerrors.ErrInternal
+		return nilToken, nilToken, ssoerrors.ErrInternal
+	}
+
+	if !s.hasher.Compare(refreshToken, oldSession.RefreshTokenHash) {
+		return nilToken, nilToken, ssoerrors.ErrInvalidToken
 	}
 
 	// Удаляем старую сессию
 	if err := s.sessionManage.DeleteSession(ctx, oldSession.ID); err != nil {
-		return models.Session{}, ssoerrors.ErrInternal
+		return nilToken, nilToken, ssoerrors.ErrInternal
 	}
 
 	// Создаем новую
-	return s.CreateSession(ctx, oldSession.UserID)
+	return s.CreateSession(ctx, userID)
 }
 
 // Выход (удаление сессии)
-func (s *SessionService) Logout(ctx context.Context, sessionID string) error {
+func (s *SessionService) Logout(ctx context.Context, sessionID int64) error {
 	//TO DO: use logger
 
 	if err := s.sessionManage.DeleteSession(ctx, sessionID); err != nil {
@@ -123,7 +130,7 @@ func (s *SessionService) Logout(ctx context.Context, sessionID string) error {
 }
 
 // Выход со всех устройств
-func (s *SessionService) LogoutAll(ctx context.Context, userID string) error {
+func (s *SessionService) LogoutAll(ctx context.Context, userID int64) error {
 	//TO DO: use logger
 
 	if err := s.sessionManage.DeleteAllUserSessions(ctx, userID); err != nil {

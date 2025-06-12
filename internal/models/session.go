@@ -3,8 +3,8 @@ package models
 import "time"
 
 type Session struct {
-	ID               string    `json:"id" db:"id"`
-	UserID           string    `json:"user_id" db:"user_id"`
+	ID               int64     `json:"id" db:"id"`
+	UserID           int64     `json:"user_id" db:"user_id"`
 	RefreshTokenHash string    `json:"refresh_token_hash" db:"refresh_token_hash"`
 	UserIP           string    `json:"user_ip" db:"user_ip"`
 	UserAgent        string    `json:"user_agent" db:"user_agent"`

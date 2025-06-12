@@ -16,15 +16,15 @@ type RoleService struct {
 }
 
 type RoleManage interface {
-	CreateRole(ctx context.Context, name string, permissions []string) error
-	GetRole(ctx context.Context, roleID string) (models.Role, error)
-	AssignRoleToUser(ctx context.Context, userID, roleID string) error
-	RevokeRoleFromUser(ctx context.Context, userID, roleID string) error
+	CreateRole(ctx context.Context, name string, permissions []string) (int64, error)
+	GetRole(ctx context.Context, roleID int64) (models.Role, error)
+	AssignRoleToUser(ctx context.Context, userID, roleID int64) error
+	RevokeRoleFromUser(ctx context.Context, userID, roleID int64) error
 }
 
 type PermissionsManage interface {
-	CheckUserPermission(ctx context.Context, userID, permission string) (bool, error)
-	ListUserPermissions(ctx context.Context, userID string) ([]string, error)
+	CheckUserPermission(ctx context.Context, userID int64, permission string) (bool, error)
+	ListUserPermissions(ctx context.Context, userID int64) ([]string, error)
 }
 
 func NewRoleService(
@@ -44,33 +44,33 @@ func (s *RoleService) CreateRole(
 	ctx context.Context,
 	name string,
 	permissions []string,
-) (*models.Role, error) {
+) (models.Role, error) {
 	//TO DO: use logger
 
 	// Валидация
 	if name == "" {
-		return nil, errors.New("role name cannot be empty")
+		return models.Role{}, errors.New("role name cannot be empty")
 	}
 
 	// Создание роли
-	err := s.roleManage.CreateRole(ctx, name, permissions)
+	id, err := s.roleManage.CreateRole(ctx, name, permissions)
 	if err != nil {
-		return nil, err // ErrRoleExists или другая ошибка из репозитория
+		return models.Role{}, err // ErrRoleExists или другая ошибка из репозитория
 	}
 
 	// Возвращаем созданную роль
-	role, err := s.roleManage.GetRole(ctx, name) // Предполагаем, что GetRole ищет по name
+	role, err := s.roleManage.GetRole(ctx, id)
 	if err != nil {
-		return nil, err
+		return models.Role{}, err
 	}
 
-	return &role, nil
+	return role, nil
 }
 
 // AssignRole назначает роль пользователю с проверками
 func (s *RoleService) AssignRole(
 	ctx context.Context,
-	userID, roleID string,
+	userID, roleID int64,
 ) error {
 	//TO DO: use logger
 
@@ -90,7 +90,7 @@ func (s *RoleService) AssignRole(
 // CheckPermission проверяет право пользователя
 func (s *RoleService) CheckPermission(
 	ctx context.Context,
-	userID, permission string,
+	userID int64, permission string,
 ) (bool, error) {
 	//TO DO: use logger
 
@@ -100,7 +100,7 @@ func (s *RoleService) CheckPermission(
 // GetUserPermissions возвращает все права пользователя
 func (s *RoleService) GetUserPermissions(
 	ctx context.Context,
-	userID string,
+	userID int64,
 ) ([]string, error) {
 	//TO DO: use logger
 
@@ -110,7 +110,7 @@ func (s *RoleService) GetUserPermissions(
 // RevokeRole отзывает роль у пользователя
 func (s *RoleService) RevokeRole(
 	ctx context.Context,
-	userID, roleID string,
+	userID, roleID int64,
 ) error {
 	//TO DO: use logger
 

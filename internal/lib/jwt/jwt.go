@@ -10,7 +10,7 @@ import (
 )
 
 type JWTManager interface {
-	GenerateAccessToken(userID string, roles []string) (string, error)
+	GenerateAccessToken(userID int64) (string, error)
 	GenerateRefreshToken() (string, error)
 	ValidateAccessToken(tokenString string) (*AccessTokenClaims, error)
 }
@@ -30,9 +30,8 @@ type TokenKeys struct {
 
 // Claims для Access токена
 type AccessTokenClaims struct {
-	UserID    string   `json:"user_id"`
-	Roles     []string `json:"roles"`
-	SessionID string   `json:"sid"` // Добавьте ID сессии для инвалидации
+	UserID    int64  `json:"user_id"`
+	SessionID string `json:"sid"` // Добавьте ID сессии для инвалидации
 	jwt.RegisteredClaims
 }
 
@@ -50,10 +49,9 @@ func NewTokenGenerator(cfg TokenConfig, keys TokenKeys) *TokenGenerator {
 }
 
 // GenerateAccessToken создает JWT Access токен
-func (g *TokenGenerator) GenerateAccessToken(userID string, roles []string) (string, error) {
+func (g *TokenGenerator) GenerateAccessToken(userID int64) (string, error) {
 	claims := AccessTokenClaims{
 		UserID: userID,
-		Roles:  roles,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(g.config.AccessTokenExpiry)),
 			Issuer:    g.config.Issuer,

@@ -2,24 +2,23 @@ package session
 
 import (
 	"context"
-	"sso-service/internal/models"
 
-	ssov1 "github.com/DarthanHawke/protos-payment-system/gen/go/auth"
+	ssov1 "github.com/DarthanHawke/protos-payment-system/gen/go/sso"
 	"google.golang.org/grpc"
 )
 
 type Session interface {
-	CreateSession(ctx context.Context, userID string) (models.Session, error)
-	RefreshSession(ctx context.Context, refreshToken string) (models.Session, error)
+	CreateSession(ctx context.Context, userID int64) (string, string, error)
+	RefreshSession(ctx context.Context, userID int64, refreshToken string) (string, string, error)
 	Logout(ctx context.Context, sessionID string) error
 	LogoutAll(ctx context.Context, userID string) error
 }
 
-type UserServerAPI struct {
-	ssov1.UnimplementedAuthServiceServer
+type SessionServerAPI struct {
+	ssov1.UnimplementedSessionServiceServer
 	session Session
 }
 
 func NewSessionServer(gRPC *grpc.Server, session Session) {
-	ssov1.RegisterAuthServiceServer(gRPC, &UserServerAPI{session: session})
+	ssov1.RegisterSessionServiceServer(gRPC, &SessionServerAPI{session: session})
 }

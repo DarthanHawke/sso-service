@@ -17,7 +17,8 @@ type SessionDataBase struct {
 
 func (sessionDB *SessionDataBase) CreateSession(
 	ctx context.Context,
-	userID, refreshToken string,
+	userID int64,
+	refreshToken string,
 	expiresAt time.Time,
 ) error {
 	stmt, err := sessionDB.db.Prepare(`
@@ -49,6 +50,37 @@ func (sessionDB *SessionDataBase) CreateSession(
 	}
 
 	return nil
+}
+
+// GetSessionByUserId возвращает сессию по id пользователя
+func (sessionDB *SessionDataBase) GetSessionByUserId(
+	ctx context.Context,
+	userID int64,
+) (models.Session, error) {
+	var session models.Session
+	err := sessionDB.db.GetContext(ctx, &session, `
+        SELECT 
+            id, 
+            user_id, 
+            refresh_token, 
+            ip, 
+            user_agent, 
+            expires_at, 
+            created_at
+        FROM sessions
+        WHERE user_id = $1 AND expires_at > NOW()`,
+		userID,
+	)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return models.Session{}, fmt.Errorf("%w", ssoerrors.ErrSessionNotFound)
+	}
+
+	if err != nil {
+		return models.Session{}, fmt.Errorf("%w", err)
+	}
+
+	return session, nil
 }
 
 // GetSessionByToken возвращает сессию по refresh-токену
@@ -85,7 +117,7 @@ func (sessionDB *SessionDataBase) GetSessionByToken(
 // GetUserSessions возвращает все активные сессии пользователя
 func (sessionDB *SessionDataBase) GetUserSessions(
 	ctx context.Context,
-	userID string,
+	userID int64,
 ) ([]models.Session, error) {
 	const op = "repository.GetUserSessions"
 
@@ -113,7 +145,7 @@ func (sessionDB *SessionDataBase) GetUserSessions(
 }
 
 // DeleteSession удаляет конкретную сессию по ID
-func (sessionDB *SessionDataBase) DeleteSession(ctx context.Context, sessionID string) error {
+func (sessionDB *SessionDataBase) DeleteSession(ctx context.Context, sessionID int64) error {
 	result, err := sessionDB.db.ExecContext(ctx, `
         DELETE FROM sessions 
         WHERE id = $1`,
@@ -137,7 +169,7 @@ func (sessionDB *SessionDataBase) DeleteSession(ctx context.Context, sessionID s
 }
 
 // DeleteAllUserSessions удаляет все сессии пользователя
-func (sessionDB *SessionDataBase) DeleteAllUserSessions(ctx context.Context, userID string) error {
+func (sessionDB *SessionDataBase) DeleteAllUserSessions(ctx context.Context, userID int64) error {
 	_, err := sessionDB.db.ExecContext(ctx, `
         DELETE FROM sessions 
         WHERE user_id = $1`,
