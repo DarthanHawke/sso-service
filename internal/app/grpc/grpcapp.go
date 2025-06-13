@@ -3,6 +3,9 @@ package grpcapp
 import (
 	"fmt"
 	"net"
+	grpcrole "sso-service/internal/grpc/role"
+	grpcsession "sso-service/internal/grpc/session"
+	grpcuser "sso-service/internal/grpc/user"
 
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -16,13 +19,15 @@ type App struct {
 
 func New(
 	logger *zap.Logger,
-	// TODO: authService
-	// TODO: roleService
-	// TODO: userService
 	gRPCport int,
+	roleService grpcrole.Role,
+	sessionService grpcsession.Session,
+	userService grpcuser.User,
 ) *App {
 	gRPCServer := grpc.NewServer()
-
+	grpcrole.NewRoleServer(gRPCServer, roleService)
+	grpcsession.NewSessionServer(gRPCServer, sessionService)
+	grpcuser.NewUserServer(gRPCServer, userService)
 	return &App{
 		logger:     logger,
 		gRPCServer: gRPCServer,

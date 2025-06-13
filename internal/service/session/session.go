@@ -23,7 +23,6 @@ type SessionService struct {
 	sessionManage SessionManage
 	sessionGet    SessionGet
 	jwtManager    jwt.JWTManager
-	tokenTTL      time.Duration
 	hasher        hash.PasswordHasher
 }
 
@@ -45,7 +44,6 @@ func NewSessionService(
 	sessionManage SessionManage,
 	sessionGet SessionGet,
 	jwtManager jwt.JWTManager,
-	tokenTTL time.Duration,
 	hasher hash.PasswordHasher,
 ) *SessionService {
 	return &SessionService{
@@ -53,7 +51,6 @@ func NewSessionService(
 		sessionManage: sessionManage,
 		sessionGet:    sessionGet,
 		jwtManager:    jwtManager,
-		tokenTTL:      tokenTTL,
 		hasher:        hasher,
 	}
 }
@@ -78,7 +75,7 @@ func (s *SessionService) CreateSession(ctx context.Context, userID int64) (strin
 		return nilToken, nilToken, ssoerrors.ErrInternal
 	}
 
-	expiresAt := time.Now().Add(s.tokenTTL)
+	expiresAt := time.Now().Add(s.jwtManager.GetRefreshTokenTTL())
 
 	if err := s.sessionManage.CreateSession(ctx, userID, refreshTokenHash, expiresAt); err != nil {
 		return nilToken, nilToken, ssoerrors.ErrInternal
@@ -90,8 +87,8 @@ func (s *SessionService) CreateSession(ctx context.Context, userID int64) (strin
 // Обновление сессии
 func (s *SessionService) RefreshSession(
 	ctx context.Context,
-	refreshToken string,
 	userID int64,
+	refreshToken string,
 ) (string, string, error) {
 	//TO DO: use logger
 

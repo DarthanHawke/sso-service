@@ -5,6 +5,8 @@ import (
 	"os/signal"
 	ssoapp "sso-service/internal/app"
 	"sso-service/internal/config"
+	"sso-service/internal/lib/hash"
+	"sso-service/internal/lib/jwt"
 	"sso-service/internal/lib/logger"
 	"syscall"
 
@@ -15,6 +17,10 @@ const (
 	example     = "example"
 	development = "development"
 	production  = "production"
+)
+
+const (
+	HashCost = 12
 )
 
 func main() {
@@ -35,12 +41,24 @@ func main() {
 		return
 	}
 
+	// JWT
+	jwtManager := jwt.NewTokenGenerator(
+		cfg.AccessTokenTTL,
+		cfg.RefreshTokenTTL,
+		cfg.Issuer,
+		cfg.PrivateKeyPath,
+		cfg.PublicKeyPath,
+	)
+
+	// Hash
+	hasher := hash.NewBcryptHasher(HashCost)
+
 	// Канал для graceful shutdown
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
 	// инициализируем сервер sso
-	application := ssoapp.New(log, cfg.GRPSServer.Port, cfg.DataBase.DSN(), cfg.JWT.AccessTokenTTL)
+	application := ssoapp.New(log, cfg.GRPSServer.Port, cfg.DataBase.DSN(), jwtManager, hasher)
 
 	// запускаем gRPC сервер
 	go application.GRPCServer.MustRun()

@@ -17,6 +17,12 @@ type RoleDataBase struct {
 	// TO DO: Redis Cache
 }
 
+func NewRoleDataBase(db *Database) *RoleDataBase {
+	return &RoleDataBase{
+		db: db,
+	}
+}
+
 // InitRoles создаёт базовые роли
 func (RoleDB RoleDataBase) InitRoles() error {
 	SuperAdminPerms := permissions.All
@@ -76,7 +82,7 @@ func (RoleDB *RoleDataBase) CreateRole(
 }
 
 // GetRole возвращает роль по ID
-func (RoleDB *RoleDataBase) GetRole(ctx context.Context, roleID string) (models.Role, error) {
+func (RoleDB *RoleDataBase) GetRole(ctx context.Context, roleID int64) (models.Role, error) {
 
 	var role models.Role
 	err := RoleDB.db.GetContext(ctx, &role, `

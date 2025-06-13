@@ -15,6 +15,12 @@ type SessionDataBase struct {
 	// TO DO: Redis Cache
 }
 
+func NewSessionDataBase(db *Database) *SessionDataBase {
+	return &SessionDataBase{
+		db: db,
+	}
+}
+
 func (sessionDB *SessionDataBase) CreateSession(
 	ctx context.Context,
 	userID int64,

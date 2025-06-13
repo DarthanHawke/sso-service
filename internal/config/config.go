@@ -13,6 +13,7 @@ type Configuration struct {
 	DataBase   `mapstructure:",squash"`
 	Redis      `mapstructure:",squash"`
 	JWT        `mapstructure:",squash"`
+	Keys       `mapstructure:",squash"`
 }
 
 type GRPSServer struct {
@@ -38,6 +39,12 @@ type Redis struct {
 type JWT struct {
 	AccessTokenTTL  time.Duration `mapstructure:"JWT_ACCESS_TOKEN_TTL" env-default:"15m"`
 	RefreshTokenTTL time.Duration `mapstructure:"JWT_REFRESH_TOKEN_TTL" env-default:"168h"`
+	Issuer          string        `mapstructure:"JWT_ISSUER" env-default:"payment-system"`
+}
+
+type Keys struct {
+	PrivateKeyPath string `mapstructure:"KEY_PRIVATE" env-default:"./private.example.pem"`
+	PublicKeyPath  string `mapstructure:"KEY_PUBLIC" env-default:"./public.example.pem"`
 }
 
 func (c DataBase) DSN() string {

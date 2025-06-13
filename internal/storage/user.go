@@ -16,6 +16,12 @@ type UserDataBase struct {
 	// TO DO: Redis Cache
 }
 
+func NewUserDataBase(db *Database) *UserDataBase {
+	return &UserDataBase{
+		db: db,
+	}
+}
+
 // CreateUser создаёт нового пользователя models.User, используя email, passwordHash, fullName string, возвращает userID
 func (userDB *UserDataBase) CreateUser(ctx context.Context, email, passwordHash, fullName string) (int64, error) {
 	stmt, err := userDB.db.Prepare("INSERT INTO users(email, password_hash, full_name) VALUES(?, ?, ?)")
