@@ -19,9 +19,15 @@ const (
 	production  = "production"
 )
 
-const (
-	HashCost = 12
-)
+func newArgon2Params() hash.Argon2Params {
+	return hash.Argon2Params{
+		Memory:      64 * 1024, // 64MB
+		Iterations:  3,
+		Parallelism: 4,
+		SaltLength:  16,
+		KeyLength:   32,
+	}
+}
 
 func main() {
 	// Подключаем логгер Zap в настраиваемой конфигурации (>=LevelInfo выводит в консоль, >=DebugLevel в файл)
@@ -42,16 +48,20 @@ func main() {
 	}
 
 	// JWT
-	jwtManager := jwt.NewTokenGenerator(
+	jwtManager, err := jwt.NewTokenGenerator(
 		cfg.AccessTokenTTL,
 		cfg.RefreshTokenTTL,
 		cfg.Issuer,
 		cfg.PrivateKeyPath,
 		cfg.PublicKeyPath,
 	)
+	if err != nil {
+		log.Error("Failed to init JWT", zap.Error(err))
+		return
+	}
 
 	// Hash
-	hasher := hash.NewBcryptHasher(HashCost)
+	hasher := hash.NewArgon2Hasher(newArgon2Params())
 
 	// Канал для graceful shutdown
 	done := make(chan os.Signal, 1)

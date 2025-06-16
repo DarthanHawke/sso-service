@@ -12,10 +12,10 @@ import (
 
 type Role interface {
 	CreateRole(ctx context.Context, name string, permissions []string) (models.Role, error)
-	AssignRole(ctx context.Context, userID, roleID int64) error
-	RevokeRole(ctx context.Context, userID, roleID int64) error
-	CheckPermission(ctx context.Context, userID int64, permission string) (bool, error)
-	GetUserPermissions(ctx context.Context, userID int64) ([]string, error)
+	AssignRole(ctx context.Context, userID []uint8, roleID int64) error
+	RevokeRole(ctx context.Context, userID []uint8, roleID int64) error
+	CheckPermission(ctx context.Context, userID []uint8, permission string) (bool, error)
+	GetUserPermissions(ctx context.Context, userID []uint8) ([]string, error)
 }
 
 type RoleServerAPI struct {
@@ -46,7 +46,7 @@ func (s *RoleServerAPI) CreateRole(ctx context.Context, req *ssov1.CreateRoleReq
 }
 
 func (s *RoleServerAPI) AssignRole(ctx context.Context, req *ssov1.AssignRoleRequest) (*ssov1.AssignRoleResponse, error) {
-	err := s.role.AssignRole(ctx, req.GetUserId(), req.GetRoleId())
+	err := s.role.AssignRole(ctx, []uint8(req.GetUserId()), req.GetRoleId())
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to assign role")
 	}
@@ -55,7 +55,7 @@ func (s *RoleServerAPI) AssignRole(ctx context.Context, req *ssov1.AssignRoleReq
 }
 
 func (s *RoleServerAPI) RevokeRole(ctx context.Context, req *ssov1.RevokeRoleRequest) (*ssov1.RevokeRoleResponse, error) {
-	err := s.role.RevokeRole(ctx, req.GetUserId(), req.GetRoleId())
+	err := s.role.RevokeRole(ctx, []uint8(req.GetUserId()), req.GetRoleId())
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to revoke role")
 	}
@@ -67,7 +67,7 @@ func (s *RoleServerAPI) CheckPermission(ctx context.Context, req *ssov1.CheckPer
 	if req.Permission == "" {
 		return nil, status.Error(codes.InvalidArgument, "invalid role")
 	}
-	permission, err := s.role.CheckPermission(ctx, req.GetUserId(), req.GetPermission())
+	permission, err := s.role.CheckPermission(ctx, []uint8(req.GetUserId()), req.GetPermission())
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to logout")
 	}
@@ -76,7 +76,7 @@ func (s *RoleServerAPI) CheckPermission(ctx context.Context, req *ssov1.CheckPer
 }
 
 func (s *RoleServerAPI) GetUserPermissions(ctx context.Context, req *ssov1.GetUserPermissionsRequest) (*ssov1.GetUserPermissionsResponse, error) {
-	permissions, err := s.role.GetUserPermissions(ctx, req.GetUserId())
+	permissions, err := s.role.GetUserPermissions(ctx, []uint8(req.GetUserId()))
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to logout")
 	}

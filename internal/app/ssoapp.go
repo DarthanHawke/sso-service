@@ -21,7 +21,7 @@ func New(
 	grpcPort int,
 	storagePath string,
 	jwtManager jwt.JWTManager,
-	hasher hash.PasswordHasher,
+	hasher hash.Argon2Manager,
 ) *App {
 	// Подключаемся к БД
 	dataBase, err := storage.NewDatabase(storagePath)

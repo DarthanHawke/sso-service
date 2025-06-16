@@ -3,6 +3,7 @@ package grpcapp
 import (
 	"fmt"
 	"net"
+	"sso-service/internal/grpc/interceptor"
 	grpcrole "sso-service/internal/grpc/role"
 	grpcsession "sso-service/internal/grpc/session"
 	grpcuser "sso-service/internal/grpc/user"
@@ -24,7 +25,7 @@ func New(
 	sessionService grpcsession.Session,
 	userService grpcuser.User,
 ) *App {
-	gRPCServer := grpc.NewServer()
+	gRPCServer := grpc.NewServer(grpc.UnaryInterceptor(interceptor.IPUserAgentInterceptor))
 	grpcrole.NewRoleServer(gRPCServer, roleService)
 	grpcsession.NewSessionServer(gRPCServer, sessionService)
 	grpcuser.NewUserServer(gRPCServer, userService)

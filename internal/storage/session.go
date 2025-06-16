@@ -23,70 +23,46 @@ func NewSessionDataBase(db *Database) *SessionDataBase {
 
 func (sessionDB *SessionDataBase) CreateSession(
 	ctx context.Context,
-	userID int64,
+	userID []uint8,
 	refreshToken string,
 	expiresAt time.Time,
 ) error {
+	const op = "storage.user.CreateSession"
+
+	ip, _ := ctx.Value("ip").(string)
+
+	userAgent, _ := ctx.Value("user_agent").(string)
+
 	stmt, err := sessionDB.db.Prepare(`
         INSERT INTO sessions (
             id, 
             user_id, 
-            refresh_token, 
-            ip, 
+            refresh_token_hash, 
+            user_ip, 
             user_agent, 
-            expires_at
+            expires_at,
+			created_at
         ) VALUES (
             gen_random_uuid(), 
-            $1, $2, $3, $4, $5
+            $1, $2, $3, $4, $5, NOW()
         )`)
 	if err != nil {
-		return fmt.Errorf("%w", err)
+		return fmt.Errorf("%s: %w", op, err)
 	}
 
 	_, err = stmt.ExecContext(ctx,
 		userID,
 		refreshToken,
-		ctx.Value("ip").(string),         // Получаем IP из контекста
-		ctx.Value("user_agent").(string), // Получаем User-Agent из контекста
+		ip,        // Получаем IP из контекста
+		userAgent, // Получаем User-Agent из контекста
 		expiresAt,
 	)
 
 	if err != nil {
-		return fmt.Errorf("%w", err)
+		return fmt.Errorf("%s: %w", op, err)
 	}
 
 	return nil
-}
-
-// GetSessionByUserId возвращает сессию по id пользователя
-func (sessionDB *SessionDataBase) GetSessionByUserId(
-	ctx context.Context,
-	userID int64,
-) (models.Session, error) {
-	var session models.Session
-	err := sessionDB.db.GetContext(ctx, &session, `
-        SELECT 
-            id, 
-            user_id, 
-            refresh_token, 
-            ip, 
-            user_agent, 
-            expires_at, 
-            created_at
-        FROM sessions
-        WHERE user_id = $1 AND expires_at > NOW()`,
-		userID,
-	)
-
-	if errors.Is(err, sql.ErrNoRows) {
-		return models.Session{}, fmt.Errorf("%w", ssoerrors.ErrSessionNotFound)
-	}
-
-	if err != nil {
-		return models.Session{}, fmt.Errorf("%w", err)
-	}
-
-	return session, nil
 }
 
 // GetSessionByToken возвращает сессию по refresh-токену
@@ -94,27 +70,29 @@ func (sessionDB *SessionDataBase) GetSessionByToken(
 	ctx context.Context,
 	refreshToken string,
 ) (models.Session, error) {
+	const op = "storage.user.GetSessionByToken"
+
 	var session models.Session
 	err := sessionDB.db.GetContext(ctx, &session, `
         SELECT 
             id, 
             user_id, 
-            refresh_token, 
-            ip, 
+            refresh_token_hash, 
+            user_ip, 
             user_agent, 
-            expires_at, 
-            created_at
+            expires_at,
+			created_at
         FROM sessions
-        WHERE refresh_token = $1 AND expires_at > NOW()`,
+        WHERE refresh_token_hash = $1 AND expires_at > NOW()`,
 		refreshToken,
 	)
 
 	if errors.Is(err, sql.ErrNoRows) {
-		return models.Session{}, fmt.Errorf("%w", ssoerrors.ErrSessionNotFound)
+		return models.Session{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrSessionNotFound)
 	}
 
 	if err != nil {
-		return models.Session{}, fmt.Errorf("%w", err)
+		return models.Session{}, fmt.Errorf("%s: %w", op, err)
 	}
 
 	return session, nil
@@ -123,7 +101,7 @@ func (sessionDB *SessionDataBase) GetSessionByToken(
 // GetUserSessions возвращает все активные сессии пользователя
 func (sessionDB *SessionDataBase) GetUserSessions(
 	ctx context.Context,
-	userID int64,
+	userID []uint8,
 ) ([]models.Session, error) {
 	const op = "repository.GetUserSessions"
 
@@ -132,11 +110,11 @@ func (sessionDB *SessionDataBase) GetUserSessions(
         SELECT 
             id, 
             user_id, 
-            refresh_token, 
-            ip, 
+            refresh_token_hash, 
+            user_ip, 
             user_agent, 
-            expires_at, 
-            created_at
+            expires_at,
+			created_at
         FROM sessions
         WHERE user_id = $1 AND expires_at > NOW()
         ORDER BY created_at DESC`,
@@ -151,7 +129,9 @@ func (sessionDB *SessionDataBase) GetUserSessions(
 }
 
 // DeleteSession удаляет конкретную сессию по ID
-func (sessionDB *SessionDataBase) DeleteSession(ctx context.Context, sessionID int64) error {
+func (sessionDB *SessionDataBase) DeleteSession(ctx context.Context, sessionID []uint8) error {
+	const op = "storage.user.DeleteSession"
+
 	result, err := sessionDB.db.ExecContext(ctx, `
         DELETE FROM sessions 
         WHERE id = $1`,
@@ -159,23 +139,25 @@ func (sessionDB *SessionDataBase) DeleteSession(ctx context.Context, sessionID i
 	)
 
 	if err != nil {
-		return fmt.Errorf("%w", err)
+		return fmt.Errorf("%s: %w", op, err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("%w", err)
+		return fmt.Errorf("%s: %w", op, err)
 	}
 
 	if rowsAffected == 0 {
-		return fmt.Errorf("%w", ssoerrors.ErrSessionNotFound)
+		return fmt.Errorf("%s: %w", op, ssoerrors.ErrSessionNotFound)
 	}
 
 	return nil
 }
 
 // DeleteAllUserSessions удаляет все сессии пользователя
-func (sessionDB *SessionDataBase) DeleteAllUserSessions(ctx context.Context, userID int64) error {
+func (sessionDB *SessionDataBase) DeleteAllUserSessions(ctx context.Context, userID []uint8) error {
+	const op = "storage.user.DeleteAllUserSessions"
+
 	_, err := sessionDB.db.ExecContext(ctx, `
         DELETE FROM sessions 
         WHERE user_id = $1`,
@@ -183,7 +165,7 @@ func (sessionDB *SessionDataBase) DeleteAllUserSessions(ctx context.Context, use
 	)
 
 	if err != nil {
-		return fmt.Errorf("%w", err)
+		return fmt.Errorf("%s: %w", op, err)
 	}
 
 	return nil
@@ -191,17 +173,19 @@ func (sessionDB *SessionDataBase) DeleteAllUserSessions(ctx context.Context, use
 
 // IsSessionValid проверяет валидность сессии
 func (sessionDB *SessionDataBase) IsSessionValid(ctx context.Context, refreshToken string) (bool, error) {
+	const op = "storage.user.IsSessionValid"
+
 	var exists bool
 	err := sessionDB.db.GetContext(ctx, &exists, `
         SELECT EXISTS (
             SELECT 1 FROM sessions 
-            WHERE refresh_token = $1 AND expires_at > NOW()
+            WHERE refresh_token_hash = $1 AND expires_at > NOW()
         )`,
 		refreshToken,
 	)
 
 	if err != nil {
-		return false, fmt.Errorf(" %w", err)
+		return false, fmt.Errorf("%s: %w", op, err)
 	}
 
 	return exists, nil

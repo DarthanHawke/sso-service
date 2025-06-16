@@ -13,7 +13,7 @@ import (
 )
 
 type JWTManager interface {
-	GenerateAccessToken(userID int64) (string, error)
+	GenerateAccessToken(userID []uint8) (string, error)
 	GenerateRefreshToken() (string, error)
 	ValidateAccessToken(tokenString string) (*AccessTokenClaims, error)
 	GetAccessTokenTTL() time.Duration
@@ -35,8 +35,8 @@ type TokenKeys struct {
 
 // Claims для Access токена
 type AccessTokenClaims struct {
-	UserID    int64  `json:"user_id"`
-	SessionID string `json:"sid"` // Добавьте ID сессии для инвалидации
+	UserID    []uint8 `json:"user_id"`
+	SessionID string  `json:"sid"` // Добавьте ID сессии для инвалидации
 	jwt.RegisteredClaims
 }
 
@@ -50,11 +50,15 @@ func NewTokenGenerator(
 	accessTokenTTL, refreshTokenTTL time.Duration,
 	issuer string,
 	privateKeyPath, publicKeyPath string,
-) *TokenGenerator {
+) (*TokenGenerator, error) {
+	keys, err := NewTokenKeys(privateKeyPath, publicKeyPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load keys: %w", err)
+	}
 	return &TokenGenerator{
 		config: NewTokenConfig(accessTokenTTL, refreshTokenTTL, issuer),
-		keys:   NewTokenKeys(privateKeyPath, publicKeyPath),
-	}
+		keys:   keys,
+	}, nil
 }
 
 func NewTokenConfig(accessTokenTTL, refreshTokenTTL time.Duration, issuer string) *TokenConfig {
@@ -65,34 +69,34 @@ func NewTokenConfig(accessTokenTTL, refreshTokenTTL time.Duration, issuer string
 	}
 }
 
-func NewTokenKeys(privateKeyPath, publicKeyPath string) *TokenKeys {
+func NewTokenKeys(privateKeyPath, publicKeyPath string) (*TokenKeys, error) {
 	privBytes, err := os.ReadFile(privateKeyPath)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	pubBytes, err := os.ReadFile(publicKeyPath)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	privBlock, _ := pem.Decode(privBytes)
 	pubBlock, _ := pem.Decode(pubBytes)
 
-	privKey, err := x509.ParsePKCS1PrivateKey(privBlock.Bytes)
+	privKey, err := x509.ParsePKCS8PrivateKey(privBlock.Bytes)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	pubKey, err := x509.ParsePKIXPublicKey(pubBlock.Bytes)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	return &TokenKeys{
-		privateKey: privKey,
+		privateKey: privKey.(*rsa.PrivateKey),
 		publicKey:  pubKey.(*rsa.PublicKey),
-	}
+	}, nil
 }
 
 func (g *TokenGenerator) GetAccessTokenTTL() time.Duration {
@@ -104,7 +108,7 @@ func (g *TokenGenerator) GetRefreshTokenTTL() time.Duration {
 }
 
 // GenerateAccessToken создает JWT Access токен
-func (g *TokenGenerator) GenerateAccessToken(userID int64) (string, error) {
+func (g *TokenGenerator) GenerateAccessToken(userID []uint8) (string, error) {
 	claims := AccessTokenClaims{
 		UserID: userID,
 		RegisteredClaims: jwt.RegisteredClaims{

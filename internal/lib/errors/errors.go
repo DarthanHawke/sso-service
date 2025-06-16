@@ -21,10 +21,12 @@ var (
 var (
 	ErrSessionNotFound = errors.New("session not found")
 	ErrInvalidToken    = errors.New("accsess data are outdated")
+	ErrSessionOld      = errors.New("session is old")
 )
 
 var (
 	ErrRoleExists      = errors.New("role already exists")
 	ErrRoleNotFound    = errors.New("role not found")
+	ErrRoleName        = errors.New("role name cannot be empty")
 	ErrRoleNotAssigned = errors.New("role is not assigned to the user")
 )

@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"errors"
+	"fmt"
 	ssoerrors "sso-service/internal/lib/errors"
 	"sso-service/internal/lib/hash"
 
@@ -23,19 +24,18 @@ type SessionService struct {
 	sessionManage SessionManage
 	sessionGet    SessionGet
 	jwtManager    jwt.JWTManager
-	hasher        hash.PasswordHasher
+	hasher        hash.Argon2Manager
 }
 
 type SessionManage interface {
-	CreateSession(ctx context.Context, userID int64, refreshToken string, expiresAt time.Time) error
-	DeleteSession(ctx context.Context, sessionID int64) error
-	DeleteAllUserSessions(ctx context.Context, userID int64) error
+	CreateSession(ctx context.Context, userID []uint8, refreshToken string, expiresAt time.Time) error
+	DeleteSession(ctx context.Context, sessionID []uint8) error
+	DeleteAllUserSessions(ctx context.Context, userID []uint8) error
 }
 
 type SessionGet interface {
 	GetSessionByToken(ctx context.Context, refreshToken string) (models.Session, error)
-	GetSessionByUserId(ctx context.Context, userID int64) (models.Session, error)
-	GetUserSessions(ctx context.Context, userID int64) ([]models.Session, error)
+	GetUserSessions(ctx context.Context, userID []uint8) ([]models.Session, error)
 	IsSessionValid(ctx context.Context, refreshToken string) (bool, error)
 }
 
@@ -44,7 +44,7 @@ func NewSessionService(
 	sessionManage SessionManage,
 	sessionGet SessionGet,
 	jwtManager jwt.JWTManager,
-	hasher hash.PasswordHasher,
+	hasher hash.Argon2Manager,
 ) *SessionService {
 	return &SessionService{
 		logger:        logger,
@@ -56,29 +56,38 @@ func NewSessionService(
 }
 
 // Создание сессии
-func (s *SessionService) CreateSession(ctx context.Context, userID int64) (string, string, error) {
-	//TO DO: use logger
+func (s *SessionService) CreateSession(ctx context.Context, userID []uint8) (string, string, error) {
+	const op = "service.role.CreateRole"
+
+	s.logger.With(
+		zap.String("op", op),
+	)
+
+	s.logger.Info("creating new session")
 
 	// Генерация токенов
 	refreshToken, err := s.jwtManager.GenerateRefreshToken()
 	if err != nil {
-		return nilToken, nilToken, ssoerrors.ErrInternal
+		s.logger.Error("generate refresh token", zap.Error(err))
+
+		return nilToken, nilToken, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 	accessToken, err := s.jwtManager.GenerateAccessToken(userID)
 	if err != nil {
-		return nilToken, nilToken, ssoerrors.ErrInternal
+		s.logger.Error("generate accsess token", zap.Error(err))
+
+		return nilToken, nilToken, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
 	// Хеширование токена
-	refreshTokenHash, err := s.hasher.Hash(refreshToken)
-	if err != nil {
-		return nilToken, nilToken, ssoerrors.ErrInternal
-	}
+	refreshTokenHash := s.hasher.HashToken(refreshToken)
 
 	expiresAt := time.Now().Add(s.jwtManager.GetRefreshTokenTTL())
 
 	if err := s.sessionManage.CreateSession(ctx, userID, refreshTokenHash, expiresAt); err != nil {
-		return nilToken, nilToken, ssoerrors.ErrInternal
+		s.logger.Error("hashing token", zap.Error(err))
+
+		return nilToken, nilToken, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
 	return accessToken, refreshToken, nil
@@ -87,26 +96,42 @@ func (s *SessionService) CreateSession(ctx context.Context, userID int64) (strin
 // Обновление сессии
 func (s *SessionService) RefreshSession(
 	ctx context.Context,
-	userID int64,
+	userID []uint8,
 	refreshToken string,
 ) (string, string, error) {
-	//TO DO: use logger
+	const op = "service.role.RefreshSession"
 
-	oldSession, err := s.sessionGet.GetSessionByUserId(ctx, userID)
+	s.logger.With(
+		zap.String("op", op),
+	)
+
+	s.logger.Info("refreshing session")
+
+	// Хеширование токена
+	refreshTokenHash := s.hasher.HashToken(refreshToken)
+
+	oldSession, err := s.sessionGet.GetSessionByToken(ctx, refreshTokenHash)
 	if err != nil {
 		if errors.Is(err, ssoerrors.ErrSessionNotFound) {
-			return nilToken, nilToken, ssoerrors.ErrInvalidToken
+			s.logger.Warn("sessinon dont get", zap.Error(err))
+
+			return nilToken, nilToken, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 		}
-		return nilToken, nilToken, ssoerrors.ErrInternal
+		s.logger.Warn("sessinon dont get", zap.Error(err))
+
+		return nilToken, nilToken, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
-	if !s.hasher.Compare(refreshToken, oldSession.RefreshTokenHash) {
-		return nilToken, nilToken, ssoerrors.ErrInvalidToken
+	// Проверяем срок действия
+	if time.Now().After(oldSession.ExpiresAt) {
+		return nilToken, nilToken, ssoerrors.ErrSessionOld
 	}
 
 	// Удаляем старую сессию
 	if err := s.sessionManage.DeleteSession(ctx, oldSession.ID); err != nil {
-		return nilToken, nilToken, ssoerrors.ErrInternal
+		s.logger.Warn("cannot delete session", zap.Error(err))
+
+		return nilToken, nilToken, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
 	// Создаем новую
@@ -114,24 +139,42 @@ func (s *SessionService) RefreshSession(
 }
 
 // Выход (удаление сессии)
-func (s *SessionService) Logout(ctx context.Context, sessionID int64) error {
-	//TO DO: use logger
+func (s *SessionService) Logout(ctx context.Context, sessionID []uint8) error {
+	const op = "service.role.Logout"
+
+	s.logger.With(
+		zap.String("op", op),
+	)
+
+	s.logger.Info("logout session")
 
 	if err := s.sessionManage.DeleteSession(ctx, sessionID); err != nil {
 		if errors.Is(err, ssoerrors.ErrSessionNotFound) {
-			return ssoerrors.ErrSessionNotFound
+			s.logger.Error("cannot delete session", zap.Error(err))
+
+			return fmt.Errorf("%s: %w", op, ssoerrors.ErrSessionNotFound)
 		}
-		return ssoerrors.ErrInternal
+		s.logger.Error("cannot delete session", zap.Error(err))
+
+		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 	return nil
 }
 
 // Выход со всех устройств
-func (s *SessionService) LogoutAll(ctx context.Context, userID int64) error {
-	//TO DO: use logger
+func (s *SessionService) LogoutAll(ctx context.Context, userID []uint8) error {
+	const op = "service.role.LogoutAll"
+
+	s.logger.With(
+		zap.String("op", op),
+	)
+
+	s.logger.Info("logout all session")
 
 	if err := s.sessionManage.DeleteAllUserSessions(ctx, userID); err != nil {
-		return ssoerrors.ErrInternal
+		s.logger.Error("cannot delete sessions", zap.Error(err))
+
+		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 	return nil
 }

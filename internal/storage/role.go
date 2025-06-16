@@ -61,6 +61,8 @@ func (RoleDB *RoleDataBase) CreateRole(
 	name string,
 	permissions []string,
 ) (int64, error) {
+	const op = "storage.user.CreateRole"
+
 	result, err := RoleDB.db.ExecContext(ctx, `
         INSERT INTO roles (id, name, permissions)
         VALUES (gen_random_uuid(), $1, $2)
@@ -71,11 +73,11 @@ func (RoleDB *RoleDataBase) CreateRole(
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" { // unique_violation
 			return 0, fmt.Errorf("%w", ssoerrors.ErrRoleExists)
 		}
-		return 0, fmt.Errorf("%w", err)
+		return 0, fmt.Errorf("%s: %w", op, err)
 	}
 	id, err := result.LastInsertId()
 	if err != nil {
-		return 0, fmt.Errorf("%w", err)
+		return 0, fmt.Errorf("%s: %w", op, err)
 	}
 
 	return id, nil
@@ -83,6 +85,7 @@ func (RoleDB *RoleDataBase) CreateRole(
 
 // GetRole возвращает роль по ID
 func (RoleDB *RoleDataBase) GetRole(ctx context.Context, roleID int64) (models.Role, error) {
+	const op = "storage.user.GetRole"
 
 	var role models.Role
 	err := RoleDB.db.GetContext(ctx, &role, `
@@ -92,18 +95,20 @@ func (RoleDB *RoleDataBase) GetRole(ctx context.Context, roleID int64) (models.R
     `, roleID)
 
 	if errors.Is(err, sql.ErrNoRows) {
-		return models.Role{}, fmt.Errorf("%w", ssoerrors.ErrRoleNotFound)
+		return models.Role{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleNotFound)
 	}
 
 	if err != nil {
-		return models.Role{}, fmt.Errorf("%w", err)
+		return models.Role{}, fmt.Errorf("%s: %w", op, err)
 	}
 
 	return role, nil
 }
 
 // AssignRoleToUser назначает роль пользователю
-func (RoleDB *RoleDataBase) AssignRoleToUser(ctx context.Context, userID, roleID int64) error {
+func (RoleDB *RoleDataBase) AssignRoleToUser(ctx context.Context, userID []uint8, roleID int64) error {
+	const op = "storage.user.AssignRoleToUser"
+
 	_, err := RoleDB.db.ExecContext(ctx, `
         INSERT INTO user_roles (user_id, role_id)
         VALUES ($1, $2)
@@ -111,37 +116,41 @@ func (RoleDB *RoleDataBase) AssignRoleToUser(ctx context.Context, userID, roleID
     `, userID, roleID)
 
 	if err != nil {
-		return fmt.Errorf("%w", err)
+		return fmt.Errorf("%s: %w", op, err)
 	}
 
 	return nil
 }
 
 // RevokeRoleFromUser отзывает роль у пользователя
-func (RoleDB *RoleDataBase) RevokeRoleFromUser(ctx context.Context, userID, roleID int64) error {
+func (RoleDB *RoleDataBase) RevokeRoleFromUser(ctx context.Context, userID []uint8, roleID int64) error {
+	const op = "storage.user.RevokeRoleFromUser"
+
 	result, err := RoleDB.db.ExecContext(ctx, `
         DELETE FROM user_roles
         WHERE user_id = $1 AND role_id = $2
     `, userID, roleID)
 
 	if err != nil {
-		return fmt.Errorf("%w", err)
+		return fmt.Errorf("%s: %w", op, err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("%w", err)
+		return fmt.Errorf("%s: %w", op, err)
 	}
 
 	if rowsAffected == 0 {
-		return fmt.Errorf("%w", ssoerrors.ErrRoleNotAssigned)
+		return fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleNotAssigned)
 	}
 
 	return nil
 }
 
 // CheckUserPermission проверяет наличие права у пользователя
-func (RoleDB *RoleDataBase) CheckUserPermission(ctx context.Context, userID int64, permission string) (bool, error) {
+func (RoleDB *RoleDataBase) CheckUserPermission(ctx context.Context, userID []uint8, permission string) (bool, error) {
+	const op = "storage.user.CheckUserPermission"
+
 	var exists bool
 	err := RoleDB.db.GetContext(ctx, &exists, `
         SELECT EXISTS (
@@ -152,14 +161,16 @@ func (RoleDB *RoleDataBase) CheckUserPermission(ctx context.Context, userID int6
     `, userID, permission)
 
 	if err != nil {
-		return false, fmt.Errorf("%w", err)
+		return false, fmt.Errorf("%s: %w", op, err)
 	}
 
 	return exists, nil
 }
 
 // ListUserPermissions возвращает все права пользователя
-func (RoleDB *RoleDataBase) ListUserPermissions(ctx context.Context, userID int64) ([]string, error) {
+func (RoleDB *RoleDataBase) ListUserPermissions(ctx context.Context, userID []uint8) ([]string, error) {
+	const op = "storage.user.ListUserPermissions"
+
 	var permissions []string
 	err := RoleDB.db.SelectContext(ctx, &permissions, `
         SELECT DISTINCT unnest(r.permissions)
@@ -169,7 +180,7 @@ func (RoleDB *RoleDataBase) ListUserPermissions(ctx context.Context, userID int6
     `, userID)
 
 	if err != nil {
-		return nil, fmt.Errorf("%w", err)
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
 	return permissions, nil

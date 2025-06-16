@@ -3,6 +3,7 @@ package role
 import (
 	"context"
 	"errors"
+	"fmt"
 	ssoerrors "sso-service/internal/lib/errors"
 	"sso-service/internal/models"
 
@@ -18,13 +19,13 @@ type RoleService struct {
 type RoleManage interface {
 	CreateRole(ctx context.Context, name string, permissions []string) (int64, error)
 	GetRole(ctx context.Context, roleID int64) (models.Role, error)
-	AssignRoleToUser(ctx context.Context, userID, roleID int64) error
-	RevokeRoleFromUser(ctx context.Context, userID, roleID int64) error
+	AssignRoleToUser(ctx context.Context, userID []uint8, roleID int64) error
+	RevokeRoleFromUser(ctx context.Context, userID []uint8, roleID int64) error
 }
 
 type PermissionsManage interface {
-	CheckUserPermission(ctx context.Context, userID int64, permission string) (bool, error)
-	ListUserPermissions(ctx context.Context, userID int64) ([]string, error)
+	CheckUserPermission(ctx context.Context, userID []uint8, permission string) (bool, error)
+	ListUserPermissions(ctx context.Context, userID []uint8) ([]string, error)
 }
 
 func NewRoleService(
@@ -45,23 +46,36 @@ func (s *RoleService) CreateRole(
 	name string,
 	permissions []string,
 ) (models.Role, error) {
-	//TO DO: use logger
+	const op = "service.role.CreateRole"
+
+	s.logger.With(
+		zap.String("op", op),
+		zap.String("name role", name),
+	)
+
+	s.logger.Info("creating new role")
 
 	// Валидация
 	if name == "" {
-		return models.Role{}, errors.New("role name cannot be empty")
+		s.logger.Info("invalid name", zap.Error(ssoerrors.ErrRoleName))
+
+		return models.Role{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleName)
 	}
 
 	// Создание роли
 	id, err := s.roleManage.CreateRole(ctx, name, permissions)
 	if err != nil {
-		return models.Role{}, err // ErrRoleExists или другая ошибка из репозитория
+		s.logger.Error("creating role", zap.Error(err))
+
+		return models.Role{}, fmt.Errorf("%s: %w", op, err)
 	}
 
 	// Возвращаем созданную роль
 	role, err := s.roleManage.GetRole(ctx, id)
 	if err != nil {
-		return models.Role{}, err
+		s.logger.Warn("getting role", zap.Error(err))
+
+		return models.Role{}, fmt.Errorf("%s: %w", op, err)
 	}
 
 	return role, nil
@@ -70,17 +84,28 @@ func (s *RoleService) CreateRole(
 // AssignRole назначает роль пользователю с проверками
 func (s *RoleService) AssignRole(
 	ctx context.Context,
-	userID, roleID int64,
+	userID []uint8,
+	roleID int64,
 ) error {
-	//TO DO: use logger
+	const op = "service.role.AssignRole"
+
+	s.logger.With(
+		zap.String("op", op),
+	)
+
+	s.logger.Info("assigning role")
 
 	// Проверяем существование роли
 	_, err := s.roleManage.GetRole(ctx, roleID)
 	if err != nil {
 		if errors.Is(err, ssoerrors.ErrRoleNotFound) {
+			s.logger.Warn("getting role", zap.Error(err))
+
 			return ssoerrors.ErrRoleNotFound
 		}
-		return err
+		s.logger.Warn("getting role", zap.Error(err))
+
+		return fmt.Errorf("%s: %w", op, err)
 	}
 
 	// Назначаем роль
@@ -90,9 +115,15 @@ func (s *RoleService) AssignRole(
 // CheckPermission проверяет право пользователя
 func (s *RoleService) CheckPermission(
 	ctx context.Context,
-	userID int64, permission string,
+	userID []uint8, permission string,
 ) (bool, error) {
-	//TO DO: use logger
+	const op = "service.role.CheckPermission"
+
+	s.logger.With(
+		zap.String("op", op),
+	)
+
+	s.logger.Info("checking permission")
 
 	return s.permissionsManage.CheckUserPermission(ctx, userID, permission)
 }
@@ -100,9 +131,15 @@ func (s *RoleService) CheckPermission(
 // GetUserPermissions возвращает все права пользователя
 func (s *RoleService) GetUserPermissions(
 	ctx context.Context,
-	userID int64,
+	userID []uint8,
 ) ([]string, error) {
-	//TO DO: use logger
+	const op = "service.role.GetUserPermissions"
+
+	s.logger.With(
+		zap.String("op", op),
+	)
+
+	s.logger.Info("getting permissions user")
 
 	return s.permissionsManage.ListUserPermissions(ctx, userID)
 }
@@ -110,9 +147,16 @@ func (s *RoleService) GetUserPermissions(
 // RevokeRole отзывает роль у пользователя
 func (s *RoleService) RevokeRole(
 	ctx context.Context,
-	userID, roleID int64,
+	userID []uint8,
+	roleID int64,
 ) error {
-	//TO DO: use logger
+	const op = "service.role.RevokeRole"
+
+	s.logger.With(
+		zap.String("op", op),
+	)
+
+	s.logger.Info("revoking role user")
 
 	return s.roleManage.RevokeRoleFromUser(ctx, userID, roleID)
 }

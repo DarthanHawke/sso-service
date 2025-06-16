@@ -10,10 +10,10 @@ import (
 )
 
 type Session interface {
-	CreateSession(ctx context.Context, userID int64) (string, string, error)
-	RefreshSession(ctx context.Context, userID int64, refreshToken string) (string, string, error)
-	Logout(ctx context.Context, sessionID int64) error
-	LogoutAll(ctx context.Context, userID int64) error
+	CreateSession(ctx context.Context, userID []uint8) (string, string, error)
+	RefreshSession(ctx context.Context, userID []uint8, refreshToken string) (string, string, error)
+	Logout(ctx context.Context, sessionID []uint8) error
+	LogoutAll(ctx context.Context, userID []uint8) error
 }
 
 type SessionServerAPI struct {
@@ -26,7 +26,7 @@ func NewSessionServer(gRPC *grpc.Server, session Session) {
 }
 
 func (s *SessionServerAPI) CreateSession(ctx context.Context, req *ssov1.CreateSessionRequest) (*ssov1.CreateSessionResponse, error) {
-	accsessToken, refreshToken, err := s.session.CreateSession(ctx, req.GetUserId())
+	accsessToken, refreshToken, err := s.session.CreateSession(ctx, []uint8(req.GetUserId()))
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to get tokens")
 	}
@@ -38,7 +38,7 @@ func (s *SessionServerAPI) RefreshSession(ctx context.Context, req *ssov1.Refres
 		return nil, status.Error(codes.InvalidArgument, "invalid token")
 	}
 
-	accsessToken, refreshToken, err := s.session.RefreshSession(ctx, req.GetUserId(), req.GetRefreshToken())
+	accsessToken, refreshToken, err := s.session.RefreshSession(ctx, []uint8(req.GetUserId()), req.GetRefreshToken())
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to get tokens")
 	}
@@ -47,7 +47,7 @@ func (s *SessionServerAPI) RefreshSession(ctx context.Context, req *ssov1.Refres
 }
 
 func (s *SessionServerAPI) Logout(ctx context.Context, req *ssov1.LogoutRequest) (*ssov1.LogoutResponse, error) {
-	err := s.session.Logout(ctx, req.GetSessionId())
+	err := s.session.Logout(ctx, []uint8(req.GetSessionId()))
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to logout")
 	}
@@ -56,7 +56,7 @@ func (s *SessionServerAPI) Logout(ctx context.Context, req *ssov1.LogoutRequest)
 }
 
 func (s *SessionServerAPI) LogoutAll(ctx context.Context, req *ssov1.LogoutAllRequest) (*ssov1.LogoutAllResponse, error) {
-	err := s.session.LogoutAll(ctx, req.GetUserId())
+	err := s.session.LogoutAll(ctx, []uint8(req.GetUserId()))
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to logout")
 	}

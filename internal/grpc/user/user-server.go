@@ -14,10 +14,10 @@ import (
 )
 
 type User interface {
-	Register(ctx context.Context, fullName, email, password string) (int64, error)
-	Login(ctx context.Context, email, password string) (int64, error)
-	GetProfile(ctx context.Context, userID string) (models.User, error)
-	UpdateProfile(ctx context.Context, userID, fulName, email, password string) (models.User, error)
+	Register(ctx context.Context, fullName, email, password string) ([]uint8, error)
+	Login(ctx context.Context, email, password string) ([]uint8, error)
+	GetProfile(ctx context.Context, userID []uint8) (models.User, error)
+	UpdateProfile(ctx context.Context, userID []uint8, fulName, email, password string) (models.User, error)
 }
 
 type UserServerAPI struct {
@@ -38,7 +38,7 @@ func (s *UserServerAPI) Register(ctx context.Context, req *ssov1.RegisterRequest
 		return nil, status.Error(codes.InvalidArgument, "password is required")
 	}
 
-	uid, err := s.user.Register(ctx, req.GetName(), req.GetEmail(), req.GetPassword())
+	userId, err := s.user.Register(ctx, req.GetName(), req.GetEmail(), req.GetPassword())
 	if err != nil {
 		if errors.Is(err, ssoerrors.ErrUserExists) {
 			return nil, status.Error(codes.AlreadyExists, "user already exists")
@@ -46,7 +46,7 @@ func (s *UserServerAPI) Register(ctx context.Context, req *ssov1.RegisterRequest
 		return nil, status.Error(codes.Internal, "failed to register user")
 	}
 
-	return &ssov1.RegisterResponse{UserId: uid}, nil
+	return &ssov1.RegisterResponse{UserId: string(userId)}, nil
 }
 
 func (s *UserServerAPI) Login(ctx context.Context, req *ssov1.LoginRequest) (*ssov1.LoginResponse, error) {
@@ -66,11 +66,11 @@ func (s *UserServerAPI) Login(ctx context.Context, req *ssov1.LoginRequest) (*ss
 		return nil, status.Error(codes.Internal, "Internal error")
 	}
 
-	return &ssov1.LoginResponse{UserId: userId}, nil
+	return &ssov1.LoginResponse{UserId: string(userId)}, nil
 }
 
 func (s *UserServerAPI) GetProfile(ctx context.Context, req *ssov1.GetProfileRequest) (*ssov1.GetProfileResponse, error) {
-	userProfile, err := s.user.GetProfile(ctx, req.GetUserId())
+	userProfile, err := s.user.GetProfile(ctx, []uint8(req.GetUserId()))
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to get user")
 	}
@@ -83,7 +83,7 @@ func (s *UserServerAPI) UpdateProfile(ctx context.Context, req *ssov1.UpdateProf
 		return nil, status.Error(codes.InvalidArgument, "incorrect data")
 	}
 
-	userProfile, err := s.user.UpdateProfile(ctx, req.GetUserId(), req.GetName(), req.GetEmail(), *req.Password)
+	userProfile, err := s.user.UpdateProfile(ctx, []uint8(req.GetUserId()), req.GetName(), req.GetEmail(), *req.Password)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to change user")
 	}
@@ -96,7 +96,7 @@ func convertUserToProto(u *models.User) (user *ssov1.User) {
 		return nil
 	}
 	return &ssov1.User{
-		Id:        u.ID,
+		Id:        string(u.ID),
 		Email:     u.Email,
 		FullName:  u.FullName,
 		Roles:     u.Roles,
