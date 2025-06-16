@@ -21,8 +21,9 @@ type UserService struct {
 type UserManage interface {
 	CreateUser(ctx context.Context, email, passwordHash, fullName string) ([]uint8, error)
 	DeleteUser(ctx context.Context, userID []uint8) error
-	UpdateUser(ctx context.Context, userID []uint8, email, fullName string) error
-	UpdatePassword(ctx context.Context, userID []uint8, newPasswordHash string) error
+	UpdateUserEmail(ctx context.Context, userID []uint8, email string) error
+	UpdateUserName(ctx context.Context, userID []uint8, fullName string) error
+	UpdateUserPassword(ctx context.Context, userID []uint8, newPasswordHash string) error
 }
 
 type UserGet interface {
@@ -170,15 +171,50 @@ func (s *UserService) UpdateProfile(
 
 	s.logger.Info("getting user")
 
-	if err := s.userManage.UpdateUser(ctx, userID, email, fulName); err != nil {
-		if errors.Is(err, ssoerrors.ErrUserExists) {
-			s.logger.Warn("user not found", zap.Error(ssoerrors.ErrUserExists))
+	if fulName != "" {
+		if err := s.userManage.UpdateUserName(ctx, userID, fulName); err != nil {
+			if errors.Is(err, ssoerrors.ErrUserExists) {
+				s.logger.Warn("user not found", zap.Error(ssoerrors.ErrUserExists))
 
-			return models.User{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrUserExists)
+				return models.User{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrUserExists)
+			}
+			s.logger.Warn("cannot getting user", zap.Error(err))
+
+			return models.User{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 		}
-		s.logger.Warn("cannot getting user", zap.Error(err))
-
-		return models.User{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
+	if email != "" {
+		if err := s.userManage.UpdateUserEmail(ctx, userID, email); err != nil {
+			if errors.Is(err, ssoerrors.ErrUserExists) {
+				s.logger.Warn("user not found", zap.Error(ssoerrors.ErrUserExists))
+
+				return models.User{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrUserExists)
+			}
+			s.logger.Warn("cannot getting user", zap.Error(err))
+
+			return models.User{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
+		}
+	}
+	if password != "" {
+		// Хеширование пароля
+		passwordHash, err := s.hasher.GenerateHash(password)
+		if err != nil {
+			s.logger.Error("hasing password", zap.Error(err))
+
+			return models.User{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
+		}
+
+		if err := s.userManage.UpdateUserPassword(ctx, userID, passwordHash); err != nil {
+			if errors.Is(err, ssoerrors.ErrUserExists) {
+				s.logger.Warn("user not found", zap.Error(ssoerrors.ErrUserExists))
+
+				return models.User{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrUserExists)
+			}
+			s.logger.Warn("cannot getting user", zap.Error(err))
+
+			return models.User{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
+		}
+	}
+
 	return s.GetProfile(ctx, userID)
 }

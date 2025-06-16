@@ -12,7 +12,7 @@ import (
 type Session interface {
 	CreateSession(ctx context.Context, userID []uint8) (string, string, error)
 	RefreshSession(ctx context.Context, userID []uint8, refreshToken string) (string, string, error)
-	Logout(ctx context.Context, sessionID []uint8) error
+	Logout(ctx context.Context, userID []uint8, refreshToken string) error
 	LogoutAll(ctx context.Context, userID []uint8) error
 }
 
@@ -47,7 +47,7 @@ func (s *SessionServerAPI) RefreshSession(ctx context.Context, req *ssov1.Refres
 }
 
 func (s *SessionServerAPI) Logout(ctx context.Context, req *ssov1.LogoutRequest) (*ssov1.LogoutResponse, error) {
-	err := s.session.Logout(ctx, []uint8(req.GetSessionId()))
+	err := s.session.Logout(ctx, []uint8(req.GetUserId()), req.GetRefreshToken())
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to logout")
 	}

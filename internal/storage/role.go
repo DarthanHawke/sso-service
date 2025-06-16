@@ -7,9 +7,12 @@ import (
 	"fmt"
 	ssoerrors "sso-service/internal/lib/errors"
 	"sso-service/internal/models"
-	"sso-service/internal/permissions"
 
 	"github.com/lib/pq"
+)
+
+const (
+	errIdRole = -1
 )
 
 type RoleDataBase struct {
@@ -23,38 +26,6 @@ func NewRoleDataBase(db *Database) *RoleDataBase {
 	}
 }
 
-// InitRoles создаёт базовые роли
-func (RoleDB RoleDataBase) InitRoles() error {
-	SuperAdminPerms := permissions.All
-
-	adminPerms := []string{
-		permissions.UserRead,
-		permissions.UserCreate,
-		permissions.UserUpdate,
-		permissions.PaymentCreate,
-		permissions.AdminAccess,
-	}
-
-	userPerms := []string{
-		permissions.PaymentCreate,
-	}
-
-	banUserPerms := []string{}
-
-	_, err := RoleDB.db.Exec(`
-        INSERT INTO roles (id, name, permissions) 
-        VALUES 
-            ('1', 'superadmin', $1),
-            ('2', 'admin', $2),
-			('3', 'user', $1),
-            ('4', 'ban', $2),
-		
-        ON CONFLICT DO NOTHING
-    `, pq.Array(SuperAdminPerms), pq.Array(adminPerms), pq.Array(userPerms), pq.Array(banUserPerms))
-
-	return err
-}
-
 // CreateRole создает новую роль с разрешениями
 func (RoleDB *RoleDataBase) CreateRole(
 	ctx context.Context,
@@ -63,21 +34,25 @@ func (RoleDB *RoleDataBase) CreateRole(
 ) (int64, error) {
 	const op = "storage.user.CreateRole"
 
-	result, err := RoleDB.db.ExecContext(ctx, `
-        INSERT INTO roles (id, name, permissions)
-        VALUES (gen_random_uuid(), $1, $2)
-    `, name, pq.Array(permissions)) // pq.Array для массивов PostgreSQL
-
+	stmt, err := RoleDB.db.Prepare(`
+        INSERT INTO roles (name, permissions)
+        VALUES ($1, $2)
+        RETURNING id
+    `)
 	if err != nil {
-		var pgErr *pq.Error
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" { // unique_violation
-			return 0, fmt.Errorf("%w", ssoerrors.ErrRoleExists)
-		}
-		return 0, fmt.Errorf("%s: %w", op, err)
+		return errIdRole, fmt.Errorf("%s: %w", op, err)
 	}
-	id, err := result.LastInsertId()
+
+	row := stmt.QueryRowContext(ctx, name, pq.Array(permissions))
+	var id int64
+	err = row.Scan(&id)
 	if err != nil {
-		return 0, fmt.Errorf("%s: %w", op, err)
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == "23505" { // 23505 = unique_violation
+			return errIdRole, fmt.Errorf("%s: %w", op, ssoerrors.ErrUserExists)
+		}
+
+		return errIdRole, fmt.Errorf("%s: %w", op, err)
 	}
 
 	return id, nil
@@ -88,20 +63,21 @@ func (RoleDB *RoleDataBase) GetRole(ctx context.Context, roleID int64) (models.R
 	const op = "storage.user.GetRole"
 
 	var role models.Role
-	err := RoleDB.db.GetContext(ctx, &role, `
-        SELECT id, name, permissions, created_at
+	var perms pq.StringArray
+	err := RoleDB.db.QueryRowxContext(ctx, `
+        SELECT id, name, permissions
         FROM roles
         WHERE id = $1
-    `, roleID)
-
-	if errors.Is(err, sql.ErrNoRows) {
-		return models.Role{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleNotFound)
-	}
+    `, roleID).Scan(&role.ID, &role.Name, &perms)
 
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return models.Role{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleNotFound)
+		}
 		return models.Role{}, fmt.Errorf("%s: %w", op, err)
 	}
 
+	role.Permissions = []string(perms)
 	return role, nil
 }
 

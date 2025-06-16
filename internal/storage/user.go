@@ -140,15 +140,15 @@ func (userDB *UserDataBase) GetListUsers(ctx context.Context, limit, offset int)
 }
 
 // UpdateUser обновляет email и/или fullName пользователя models.User, используя userID
-func (userDB *UserDataBase) UpdateUser(ctx context.Context, userID []uint8, email, fullName string) error {
-	const op = "storage.user.UpdateUser"
+func (userDB *UserDataBase) UpdateUserEmail(ctx context.Context, userID []uint8, email string) error {
+	const op = "storage.user.UpdateUserEmail"
 
-	stmt, err := userDB.db.Prepare("UPDATE users SET email = $1, full_name = $2 updated_at = NOW() WHERE id = $3")
+	stmt, err := userDB.db.Prepare("UPDATE users SET email = $1, updated_at = NOW() WHERE id = $2")
 	if err != nil {
 		return fmt.Errorf("%s: %w", op, err)
 	}
 
-	result, err := stmt.ExecContext(ctx, email, fullName, userID)
+	result, err := stmt.ExecContext(ctx, email, userID)
 	if err != nil {
 		return fmt.Errorf("%s: %w", op, err)
 	}
@@ -165,10 +165,35 @@ func (userDB *UserDataBase) UpdateUser(ctx context.Context, userID []uint8, emai
 }
 
 // UpdateUser обновляет email и/или fullName пользователя models.User, используя userID
-func (userDB *UserDataBase) UpdatePassword(ctx context.Context, userID []uint8, newPasswordHash string) error {
-	const op = "storage.user.UpdatePassword"
+func (userDB *UserDataBase) UpdateUserName(ctx context.Context, userID []uint8, fullName string) error {
+	const op = "storage.user.UpdateUserName"
 
-	stmt, err := userDB.db.Prepare("UPDATE users SET password_hash = $1 updated_at = NOW() WHERE id = $2")
+	stmt, err := userDB.db.Prepare("UPDATE users SET full_name = $1, updated_at = NOW() WHERE id = $2")
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	result, err := stmt.ExecContext(ctx, fullName, userID)
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	if rowsAffected == 0 {
+		return ssoerrors.ErrNotFound
+	}
+
+	return nil
+}
+
+// UpdateUser обновляет email и/или fullName пользователя models.User, используя userID
+func (userDB *UserDataBase) UpdateUserPassword(ctx context.Context, userID []uint8, newPasswordHash string) error {
+	const op = "storage.user.UpdateUserPassword"
+
+	stmt, err := userDB.db.Prepare("UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2")
 	if err != nil {
 		return fmt.Errorf("%s: %w", op, err)
 	}

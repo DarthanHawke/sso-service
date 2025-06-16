@@ -16,3 +16,8 @@
 # logs
 .log
 logs
+
+# TLS
+ca.key
+ca.crt
+server.csr

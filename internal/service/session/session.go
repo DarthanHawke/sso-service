@@ -139,7 +139,7 @@ func (s *SessionService) RefreshSession(
 }
 
 // Выход (удаление сессии)
-func (s *SessionService) Logout(ctx context.Context, sessionID []uint8) error {
+func (s *SessionService) Logout(ctx context.Context, userID []uint8, refreshToken string) error {
 	const op = "service.role.Logout"
 
 	s.logger.With(
@@ -148,7 +148,27 @@ func (s *SessionService) Logout(ctx context.Context, sessionID []uint8) error {
 
 	s.logger.Info("logout session")
 
-	if err := s.sessionManage.DeleteSession(ctx, sessionID); err != nil {
+	// Хеширование токена
+	refreshTokenHash := s.hasher.HashToken(refreshToken)
+
+	session, err := s.sessionGet.GetSessionByToken(ctx, refreshTokenHash)
+	if err != nil {
+		if errors.Is(err, ssoerrors.ErrSessionNotFound) {
+			s.logger.Warn("sessinon dont get", zap.Error(err))
+
+			return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
+		}
+		s.logger.Warn("sessinon dont get", zap.Error(err))
+
+		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
+	}
+
+	// Проверяем срок действия
+	if time.Now().After(session.ExpiresAt) {
+		return ssoerrors.ErrSessionOld
+	}
+
+	if err := s.sessionManage.DeleteSession(ctx, session.ID); err != nil {
 		if errors.Is(err, ssoerrors.ErrSessionNotFound) {
 			s.logger.Error("cannot delete session", zap.Error(err))
 

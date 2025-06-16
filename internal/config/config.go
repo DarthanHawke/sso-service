@@ -10,15 +10,21 @@ import (
 type Configuration struct {
 	Env        string `mapstructure:"ENV" env-default:"prod"`
 	GRPSServer `mapstructure:",squash"`
+	TLS        `mapstructure:",squash"`
 	DataBase   `mapstructure:",squash"`
 	Redis      `mapstructure:",squash"`
 	JWT        `mapstructure:",squash"`
-	Keys       `mapstructure:",squash"`
+	JWTKeys    `mapstructure:",squash"`
 }
 
 type GRPSServer struct {
 	Port    int `mapstructure:"SERVER_PORT" env-default:"50051"`
 	Timeout int `mapstructure:"SERVER_TIMEOUT" env-default:"10"`
+}
+
+type TLS struct {
+	TLSKey  string `mapstructure:"TLS_SERVER" env-default:"./server.example.key"`
+	TLSCert string `mapstructure:"TLS_CERT" env-default:"./server.example.crt"`
 }
 
 type DataBase struct {
@@ -42,9 +48,9 @@ type JWT struct {
 	Issuer          string        `mapstructure:"JWT_ISSUER" env-default:"payment-system"`
 }
 
-type Keys struct {
-	PrivateKeyPath string `mapstructure:"KEY_PRIVATE" env-default:"./private.example.pem"`
-	PublicKeyPath  string `mapstructure:"KEY_PUBLIC" env-default:"./public.example.pem"`
+type JWTKeys struct {
+	JWTPrivateKeyPath string `mapstructure:"JWT_KEY_PRIVATE" env-default:"./private.example.pem"`
+	JWTPublicKeyPath  string `mapstructure:"JWT_KEY_PUBLIC" env-default:"./public.example.pem"`
 }
 
 func (c DataBase) DSN() string {

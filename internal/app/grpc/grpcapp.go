@@ -1,6 +1,7 @@
 package grpcapp
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net"
 	"sso-service/internal/grpc/interceptor"
@@ -10,6 +11,7 @@ import (
 
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 type App struct {
@@ -21,11 +23,13 @@ type App struct {
 func New(
 	logger *zap.Logger,
 	gRPCport int,
+	tlsConfig *tls.Config,
 	roleService grpcrole.Role,
 	sessionService grpcsession.Session,
 	userService grpcuser.User,
 ) *App {
-	gRPCServer := grpc.NewServer(grpc.UnaryInterceptor(interceptor.IPUserAgentInterceptor))
+	creds := credentials.NewTLS(tlsConfig)
+	gRPCServer := grpc.NewServer(grpc.Creds(creds), grpc.UnaryInterceptor(interceptor.IPUserAgentInterceptor))
 	grpcrole.NewRoleServer(gRPCServer, roleService)
 	grpcsession.NewSessionServer(gRPCServer, sessionService)
 	grpcuser.NewUserServer(gRPCServer, userService)

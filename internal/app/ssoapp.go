@@ -1,6 +1,7 @@
 package ssoapp
 
 import (
+	"crypto/tls"
 	grpcapp "sso-service/internal/app/grpc"
 	"sso-service/internal/lib/hash"
 	"sso-service/internal/lib/jwt"
@@ -19,6 +20,7 @@ type App struct {
 func New(
 	logger *zap.Logger,
 	grpcPort int,
+	tlsConfig *tls.Config,
 	storagePath string,
 	jwtManager jwt.JWTManager,
 	hasher hash.Argon2Manager,
@@ -36,7 +38,7 @@ func New(
 	userService := user.NewUserService(logger, userDataBase, userDataBase, hasher)
 
 	_ = dataBase
-	gRPCApp := grpcapp.New(logger, grpcPort, roleService, sessionService, userService)
+	gRPCApp := grpcapp.New(logger, grpcPort, tlsConfig, roleService, sessionService, userService)
 
 	return &App{
 		GRPCServer: gRPCApp,

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"os"
 	"os/signal"
 	ssoapp "sso-service/internal/app"
@@ -47,13 +48,25 @@ func main() {
 		return
 	}
 
+	// Загрузка сертификата сервера и приватного ключа
+	cert, err := tls.LoadX509KeyPair(cfg.TLSCert, cfg.TLSKey)
+	if err != nil {
+		log.Error("failed to load key pair: %s", zap.Error(err))
+	}
+
+	// Создание TLS конфига
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		ClientAuth:   tls.NoClientCert,
+	}
+
 	// JWT
 	jwtManager, err := jwt.NewTokenGenerator(
 		cfg.AccessTokenTTL,
 		cfg.RefreshTokenTTL,
 		cfg.Issuer,
-		cfg.PrivateKeyPath,
-		cfg.PublicKeyPath,
+		cfg.JWTPrivateKeyPath,
+		cfg.JWTPublicKeyPath,
 	)
 	if err != nil {
 		log.Error("Failed to init JWT", zap.Error(err))
@@ -68,7 +81,7 @@ func main() {
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
 	// инициализируем сервер sso
-	application := ssoapp.New(log, cfg.GRPSServer.Port, cfg.DataBase.DSN(), jwtManager, hasher)
+	application := ssoapp.New(log, cfg.GRPSServer.Port, tlsConfig, cfg.DataBase.DSN(), jwtManager, hasher)
 
 	// запускаем gRPC сервер
 	go application.GRPCServer.MustRun()
