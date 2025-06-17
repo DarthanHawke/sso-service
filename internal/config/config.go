@@ -23,8 +23,8 @@ type GRPSServer struct {
 }
 
 type TLS struct {
-	TLSKey  string `mapstructure:"TLS_SERVER" env-default:"./server.example.key"`
-	TLSCert string `mapstructure:"TLS_CERT" env-default:"./server.example.crt"`
+	TLSKey  string `mapstructure:"TLS_SERVER" env-default:"./security/server.example.key"`
+	TLSCert string `mapstructure:"TLS_CERT" env-default:"./security/server.example.crt"`
 }
 
 type DataBase struct {
@@ -49,8 +49,8 @@ type JWT struct {
 }
 
 type JWTKeys struct {
-	JWTPrivateKeyPath string `mapstructure:"JWT_KEY_PRIVATE" env-default:"./private.example.pem"`
-	JWTPublicKeyPath  string `mapstructure:"JWT_KEY_PUBLIC" env-default:"./public.example.pem"`
+	JWTPrivateKeyPath string `mapstructure:"JWT_KEY_PRIVATE" env-default:"./security/private.example.pem"`
+	JWTPublicKeyPath  string `mapstructure:"JWT_KEY_PUBLIC" env-default:"./security/public.example.pem"`
 }
 
 func (c DataBase) DSN() string {

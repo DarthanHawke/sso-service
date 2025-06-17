@@ -25,7 +25,7 @@ func main() {
 
 	env := os.Getenv("APP_ENV")
 	if env == "" {
-		env = example // значение по умолчанию (например, production)
+		env = example
 	}
 	log.Info("ENV applied", zap.String("env", env))
 
