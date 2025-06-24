@@ -34,6 +34,9 @@ type DataBase struct {
 	Password string `mapstructure:"DB_PASSWORD" env-default:"secret"`
 	Name     string `mapstructure:"DB_NAME" env-default:"payment_db"`
 	SSLMode  string `mapstructure:"SSL_MODE" env-default:"disable"`
+	RootCert string `mapstructure:"DB_ROOT_CERT" env-default:""`
+	Cert     string `mapstructure:"DB_CERT" env-default:""`
+	Key      string `mapstructure:"DB_KEY" env-default:""`
 }
 
 type Redis struct {
@@ -55,13 +58,16 @@ type JWTKeys struct {
 
 func (c DataBase) DSN() string {
 	return fmt.Sprintf(
-		"postgres://%s:%s@%s:%d/%s?sslmode=%s",
+		"postgres://%s:%s@%s:%d/%s?sslmode=%s&sslrootcert=%s&sslcert=%s&sslkey=%s",
 		c.User,
 		c.Password,
 		c.Host,
 		c.Port,
 		c.Name,
 		c.SSLMode,
+		c.RootCert,
+		c.Cert,
+		c.Key,
 	)
 }
 
