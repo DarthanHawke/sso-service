@@ -5,9 +5,7 @@ import (
 	"errors"
 	"fmt"
 	ssoerrors "sso-service/internal/lib/errors"
-	"sso-service/internal/lib/hash"
 
-	"sso-service/internal/lib/jwt"
 	"sso-service/internal/models"
 
 	"time"
@@ -23,8 +21,19 @@ type SessionService struct {
 	logger        *zap.Logger
 	sessionManage SessionManage
 	sessionGet    SessionGet
-	jwtManager    jwt.JWTManager
-	hasher        hash.Argon2Manager
+	jwtManager    JWTManager
+	hasher        HashManager
+}
+
+type JWTManager interface {
+	GenerateAccessToken(userID []uint8) (string, error)
+	GenerateRefreshToken() (string, error)
+	GetAccessTokenTTL() time.Duration
+	GetRefreshTokenTTL() time.Duration
+}
+
+type HashManager interface {
+	HashToken(token string) string
 }
 
 type SessionManage interface {
@@ -43,8 +52,8 @@ func NewSessionService(
 	logger *zap.Logger,
 	sessionManage SessionManage,
 	sessionGet SessionGet,
-	jwtManager jwt.JWTManager,
-	hasher hash.Argon2Manager,
+	jwtManager JWTManager,
+	hasher HashManager,
 ) *SessionService {
 	return &SessionService{
 		logger:        logger,
@@ -57,7 +66,7 @@ func NewSessionService(
 
 // Создание сессии
 func (s *SessionService) CreateSession(ctx context.Context, userID []uint8) (string, string, error) {
-	const op = "service.role.CreateRole"
+	const op = "service.session.CreateRole"
 
 	s.logger.With(
 		zap.String("op", op),
@@ -99,7 +108,7 @@ func (s *SessionService) RefreshSession(
 	userID []uint8,
 	refreshToken string,
 ) (string, string, error) {
-	const op = "service.role.RefreshSession"
+	const op = "service.session.RefreshSession"
 
 	s.logger.With(
 		zap.String("op", op),
@@ -139,8 +148,8 @@ func (s *SessionService) RefreshSession(
 }
 
 // Выход (удаление сессии)
-func (s *SessionService) Logout(ctx context.Context, userID []uint8, refreshToken string) error {
-	const op = "service.role.Logout"
+func (s *SessionService) Logout(ctx context.Context, userID []uint8, sessionID []uint8) error {
+	const op = "service.session.Logout"
 
 	s.logger.With(
 		zap.String("op", op),
@@ -148,27 +157,7 @@ func (s *SessionService) Logout(ctx context.Context, userID []uint8, refreshToke
 
 	s.logger.Info("logout session")
 
-	// Хеширование токена
-	refreshTokenHash := s.hasher.HashToken(refreshToken)
-
-	session, err := s.sessionGet.GetSessionByToken(ctx, refreshTokenHash)
-	if err != nil {
-		if errors.Is(err, ssoerrors.ErrSessionNotFound) {
-			s.logger.Warn("sessinon dont get", zap.Error(err))
-
-			return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
-		}
-		s.logger.Warn("sessinon dont get", zap.Error(err))
-
-		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
-	}
-
-	// Проверяем срок действия
-	if time.Now().After(session.ExpiresAt) {
-		return ssoerrors.ErrSessionOld
-	}
-
-	if err := s.sessionManage.DeleteSession(ctx, session.ID); err != nil {
+	if err := s.sessionManage.DeleteSession(ctx, sessionID); err != nil {
 		if errors.Is(err, ssoerrors.ErrSessionNotFound) {
 			s.logger.Error("cannot delete session", zap.Error(err))
 
@@ -183,7 +172,7 @@ func (s *SessionService) Logout(ctx context.Context, userID []uint8, refreshToke
 
 // Выход со всех устройств
 func (s *SessionService) LogoutAll(ctx context.Context, userID []uint8) error {
-	const op = "service.role.LogoutAll"
+	const op = "service.session.LogoutAll"
 
 	s.logger.With(
 		zap.String("op", op),

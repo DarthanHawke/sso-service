@@ -22,8 +22,8 @@ func New(
 	grpcPort int,
 	tlsConfig *tls.Config,
 	storagePath string,
-	jwtManager jwt.JWTManager,
-	hasher hash.Argon2Manager,
+	jwtManager *jwt.TokenGenerator,
+	hasher *hash.Argon2Hasher,
 ) *App {
 	// Подключаемся к БД
 	dataBase, err := storage.NewDatabase(storagePath)

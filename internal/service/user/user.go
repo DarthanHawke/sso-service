@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	ssoerrors "sso-service/internal/lib/errors"
-	"sso-service/internal/lib/hash"
 	"sso-service/internal/models"
 
 	"go.uber.org/zap"
@@ -15,7 +14,12 @@ type UserService struct {
 	logger     *zap.Logger
 	userManage UserManage
 	userGet    UserGet
-	hasher     hash.Argon2Manager
+	hasher     Argon2Manager
+}
+
+type Argon2Manager interface {
+	GenerateHash(data string) (string, error)
+	CompareHashAndData(data, encodedHash string) (bool, error)
 }
 
 type UserManage interface {
@@ -36,7 +40,7 @@ func NewUserService(
 	logger *zap.Logger,
 	userManage UserManage,
 	userGet UserGet,
-	hasher hash.Argon2Manager,
+	hasher Argon2Manager,
 ) *UserService {
 	return &UserService{
 		logger:     logger,
@@ -47,7 +51,7 @@ func NewUserService(
 }
 
 func (s *UserService) Register(ctx context.Context, fullName, email, password string) ([]uint8, error) {
-	const op = "service.role.Register"
+	const op = "service.user.Register"
 
 	s.logger.With(
 		zap.String("op", op),
@@ -94,7 +98,7 @@ func (s *UserService) Register(ctx context.Context, fullName, email, password st
 
 // Аутентификация пользователя
 func (s *UserService) Login(ctx context.Context, email, password string) ([]uint8, error) {
-	const op = "service.role.Login"
+	const op = "service.user.Login"
 
 	s.logger.With(
 		zap.String("op", op),
@@ -132,7 +136,7 @@ func (s *UserService) Login(ctx context.Context, email, password string) ([]uint
 
 // Получение профиля пользователя
 func (s *UserService) GetProfile(ctx context.Context, userID []uint8) (models.User, error) {
-	const op = "service.role.GetProfile"
+	const op = "service.user.GetProfile"
 
 	s.logger.With(
 		zap.String("op", op),
@@ -163,7 +167,7 @@ func (s *UserService) UpdateProfile(
 	userID []uint8,
 	fulName, email, password string,
 ) (models.User, error) {
-	const op = "service.role.UpdateProfile"
+	const op = "service.user.UpdateProfile"
 
 	s.logger.With(
 		zap.String("op", op),

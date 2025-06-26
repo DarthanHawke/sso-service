@@ -4,40 +4,25 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
-	"errors"
 	"fmt"
 	"os"
+	"sso-service/internal/models"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
-type JWTManager interface {
-	GenerateAccessToken(userID []uint8) (string, error)
-	GenerateRefreshToken() (string, error)
-	ValidateAccessToken(tokenString string) (*AccessTokenClaims, error)
-	GetAccessTokenTTL() time.Duration
-	GetRefreshTokenTTL() time.Duration
-}
-
 // Конфиг
 type TokenConfig struct {
-	accessTokenTTL  time.Duration // Время жизни Access токена (например, 15m)
-	refreshTokenTTL time.Duration // Время жизни Refresh токена (например, 720h - 30 дней)
-	issuer          string        // Идентификатор издателя (название вашего сервиса)
+	accessTokenTTL  time.Duration // Время жизни Access токена
+	refreshTokenTTL time.Duration // Время жизни Refresh токена
+	issuer          string        // Идентификатор издателя
 }
 
 // Ключи
 type TokenKeys struct {
 	privateKey *rsa.PrivateKey // Приватный ключ для подписи
 	publicKey  *rsa.PublicKey  // Публичный ключ для проверки
-}
-
-// Claims для Access токена
-type AccessTokenClaims struct {
-	UserID    []uint8 `json:"user_id"`
-	SessionID string  `json:"sid"` // Добавьте ID сессии для инвалидации
-	jwt.RegisteredClaims
 }
 
 // Генератор токенов
@@ -109,7 +94,7 @@ func (g *TokenGenerator) GetRefreshTokenTTL() time.Duration {
 
 // GenerateAccessToken создает JWT Access токен
 func (g *TokenGenerator) GenerateAccessToken(userID []uint8) (string, error) {
-	claims := AccessTokenClaims{
+	claims := models.AccessTokenClaims{
 		UserID: userID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(g.config.accessTokenTTL)),
@@ -122,7 +107,7 @@ func (g *TokenGenerator) GenerateAccessToken(userID []uint8) (string, error) {
 	return token.SignedString(g.keys.privateKey)
 }
 
-// GenerateRefreshToken создает Refresh токен (простая UUID + подпись)
+// GenerateRefreshToken создает Refresh токен
 func (g *TokenGenerator) GenerateRefreshToken() (string, error) {
 	claims := jwt.RegisteredClaims{
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(g.config.refreshTokenTTL)),
@@ -131,24 +116,4 @@ func (g *TokenGenerator) GenerateRefreshToken() (string, error) {
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	return token.SignedString(g.keys.privateKey)
-}
-
-// ValidateAccessToken проверяет Access токен
-func (g *TokenGenerator) ValidateAccessToken(tokenString string) (*AccessTokenClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &AccessTokenClaims{}, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-		}
-		return g.keys.publicKey, nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	if claims, ok := token.Claims.(*AccessTokenClaims); ok && token.Valid {
-		return claims, nil
-	}
-
-	return nil, errors.New("invalid token")
 }

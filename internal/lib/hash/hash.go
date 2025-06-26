@@ -13,12 +13,6 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
-type Argon2Manager interface {
-	GenerateHash(data string) (string, error)
-	CompareHashAndData(data, encodedHash string) (bool, error)
-	HashToken(token string) string
-}
-
 var (
 	ErrHashingFailed      = errors.New("hashing failed")
 	ErrInvalidHashFormat  = errors.New("invalid hash format")
