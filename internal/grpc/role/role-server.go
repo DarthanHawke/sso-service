@@ -42,7 +42,7 @@ func (s *RoleServerAPI) CreateRole(ctx context.Context, req *ssov1.CreateRoleReq
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to get tokens")
 	}
-	return &ssov1.CreateRoleResponse{Role: convertUserToProto(&role)}, nil
+	return &ssov1.CreateRoleResponse{Role: convertRoleToProto(&role)}, nil
 }
 
 func (s *RoleServerAPI) AssignRole(ctx context.Context, req *ssov1.AssignRoleRequest) (*ssov1.AssignRoleResponse, error) {
@@ -84,14 +84,14 @@ func (s *RoleServerAPI) GetUserPermissions(ctx context.Context, req *ssov1.GetUs
 	return &ssov1.GetUserPermissionsResponse{Permissions: permissions}, nil
 }
 
-func convertUserToProto(u *models.Role) (role *ssov1.Role) {
-	if u == nil {
+func convertRoleToProto(r *models.Role) (role *ssov1.Role) {
+	if r == nil {
 		return nil
 	}
 	return &ssov1.Role{
-		Id:          u.ID,
-		Name:        u.Name,
-		Permissions: u.Permissions,
-		Description: u.Description,
+		Id:          r.ID,
+		Name:        r.Name,
+		Permissions: r.Permissions,
+		Description: r.Description,
 	}
 }
