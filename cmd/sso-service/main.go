@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"os"
 	"os/signal"
 	ssoapp "sso-service/internal/app"
@@ -53,11 +54,21 @@ func main() {
 	if err != nil {
 		log.Error("failed to load key pair: %s", zap.Error(err))
 	}
+	// Создание пула сертификатов и добавление CA
+	certPool := x509.NewCertPool()
+	ca, err := os.ReadFile(cfg.CA)
+	if err != nil {
+		log.Error("could not read ca certificate: %s", zap.Error(err))
+	}
+	if ok := certPool.AppendCertsFromPEM(ca); !ok {
+		log.Error("failed to append ca certs")
+	}
 
 	// Создание TLS конфига
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{cert},
-		ClientAuth:   tls.NoClientCert,
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    certPool,
 	}
 
 	// JWT

@@ -11,13 +11,14 @@
 .env.production
 
 # pem
-.pem
+*.pem
 
 # logs
 .log
 logs
 
 # TLS
-ca.key
-ca.crt
-server.csr
+*.key
+*.crt
+*.csr
+*.srl

@@ -23,6 +23,7 @@ type GRPSServer struct {
 }
 
 type TLS struct {
+	CA      string `mapstructure:"TLS_CA" env-default:"./security/CA.example.crt"`
 	TLSKey  string `mapstructure:"TLS_SERVER" env-default:"./security/server.example.key"`
 	TLSCert string `mapstructure:"TLS_CERT" env-default:"./security/server.example.crt"`
 }
