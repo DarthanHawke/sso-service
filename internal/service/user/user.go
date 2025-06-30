@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	ssoerrors "sso-service/internal/lib/errors"
+	"sso-service/internal/lib/validator"
 	"sso-service/internal/models"
 
 	"go.uber.org/zap"
@@ -43,13 +44,14 @@ func NewUserService(
 	hasher Argon2Manager,
 ) *UserService {
 	return &UserService{
-		logger:     logger,
+		logger:     logger.With(zap.String("component", "sso_service")),
 		userManage: userManage,
 		userGet:    userGet,
 		hasher:     hasher,
 	}
 }
 
+// Register регистрирует нового пользователя
 func (s *UserService) Register(ctx context.Context, fullName, email, password string) ([]uint8, error) {
 	const op = "service.user.Register"
 
@@ -57,27 +59,22 @@ func (s *UserService) Register(ctx context.Context, fullName, email, password st
 		zap.String("op", op),
 		zap.String("email: ", email),
 	)
-
 	s.logger.Info("registering new user")
 
 	// Валидация
-	/*if err := validator.ValidateEmail(email); err != nil {
-		s.logger.Info("invalide email", zap.Error(err))
-
-		return errId, fmt.Errorf("%s: %w", op, err)
+	if err := validator.ValidateEmail(email); err != nil {
+		s.logger.Warn("invalide email", zap.String("email", email), zap.Error(err))
+		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInvalidEmail)
 	}
-
 	if err := validator.ValidatePassword(password); err != nil {
-		s.logger.Info("invalide password", zap.Error(err))
-
-		return errId, fmt.Errorf("%s: %w", op, err)
-	}*/
+		s.logger.Warn("invalide password", zap.Error(err))
+		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrPasswordTooWeak)
+	}
 
 	// Хеширование пароля
 	passwordHash, err := s.hasher.GenerateHash(password)
 	if err != nil {
 		s.logger.Error("hasing password", zap.Error(err))
-
 		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
@@ -85,18 +82,22 @@ func (s *UserService) Register(ctx context.Context, fullName, email, password st
 	id, err := s.userManage.CreateUser(ctx, email, passwordHash, fullName)
 	if err != nil {
 		if errors.Is(err, ssoerrors.ErrUserExists) {
-			s.logger.Error("user exisits", zap.Error(ssoerrors.ErrUserExists))
+			s.logger.Warn("user exisits", zap.String("email", email), zap.Error(err))
 
 			return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrUserExists)
 		}
-		s.logger.Error("create error", zap.Error(err))
+		s.logger.Error("create error", zap.String("email", email), zap.Error(err))
 
 		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
+
+	s.logger.Debug("Successfully registerd new user",
+		zap.Uint8s("UserID", id),
+	)
 	return id, nil
 }
 
-// Аутентификация пользователя
+// Login - верификация пользователя
 func (s *UserService) Login(ctx context.Context, email, password string) ([]uint8, error) {
 	const op = "service.user.Login"
 
@@ -110,11 +111,11 @@ func (s *UserService) Login(ctx context.Context, email, password string) ([]uint
 	user, err := s.userGet.GetUserByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, ssoerrors.ErrUserNotFound) {
-			s.logger.Warn("user not found", zap.Error(ssoerrors.ErrUserNotFound))
+			s.logger.Warn("user not found", zap.String("email", email), zap.Error(err))
 
 			return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInvalidCredentials)
 		}
-		s.logger.Warn("cannot getting user", zap.Error(err))
+		s.logger.Warn("cannot getting user", zap.String("email", email), zap.Error(err))
 
 		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
@@ -122,19 +123,23 @@ func (s *UserService) Login(ctx context.Context, email, password string) ([]uint
 	// Проверка пароля
 	passwordStatus, err := s.hasher.CompareHashAndData(password, user.PasswordHash)
 	if err != nil {
-		s.logger.Warn("error to compare passwords", zap.Error(err))
+		s.logger.Error("error to compare passwords", zap.String("email", email), zap.Error(err))
 
 		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInvalidCredentials)
 	}
 	if !passwordStatus {
-		s.logger.Warn("password incorrect")
+		s.logger.Warn("password incorrect", zap.String("email", email))
 
 		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInvalidCredentials)
 	}
+
+	s.logger.Debug("Successfully login user",
+		zap.Uint8s("UserID", user.ID),
+	)
 	return user.ID, nil
 }
 
-// Получение профиля пользователя
+// GetProfile - получение профиля пользователя
 func (s *UserService) GetProfile(ctx context.Context, userID []uint8) (models.User, error) {
 	const op = "service.user.GetProfile"
 
@@ -147,21 +152,25 @@ func (s *UserService) GetProfile(ctx context.Context, userID []uint8) (models.Us
 	user, err := s.userGet.GetUserByID(ctx, userID)
 	if err != nil {
 		if errors.Is(err, ssoerrors.ErrUserNotFound) {
-			s.logger.Warn("user not found", zap.Error(ssoerrors.ErrUserNotFound))
+			s.logger.Warn("user not found", zap.Uint8s("UserID", userID), zap.Error(ssoerrors.ErrUserNotFound))
 
 			return models.User{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrUserNotFound)
 		}
-		s.logger.Warn("cannot getting user", zap.Error(err))
+		s.logger.Warn("cannot getting user", zap.Uint8s("UserID", userID), zap.Error(err))
 
 		return models.User{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
 	// Скрываем хеш пароля
 	user.PasswordHash = ""
+
+	s.logger.Debug("Successfully get user",
+		zap.Uint8s("UserID", user.ID),
+	)
 	return user, nil
 }
 
-// Обновление профиля
+// UpdateProfile - обновление профиля
 func (s *UserService) UpdateProfile(
 	ctx context.Context,
 	userID []uint8,
@@ -219,6 +228,13 @@ func (s *UserService) UpdateProfile(
 			return models.User{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 		}
 	}
+	user, err := s.GetProfile(ctx, userID)
+	if err != nil {
+		return models.User{}, fmt.Errorf("%s: %w", op, err)
+	}
 
-	return s.GetProfile(ctx, userID)
+	s.logger.Debug("Successfully update user",
+		zap.Uint8s("UserID", user.ID),
+	)
+	return user, nil
 }

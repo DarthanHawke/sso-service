@@ -26,7 +26,13 @@ func NewUserDataBase(db *Database) *UserDataBase {
 func (userDB *UserDataBase) CreateUser(ctx context.Context, email, passwordHash, fullName string) ([]uint8, error) {
 	const op = "storage.user.CreateUser"
 
-	stmt, err := userDB.db.Prepare("INSERT INTO users(email, password_hash, full_name, created_at, updated_at) VALUES($1, $2, $3, NOW(), NOW()) RETURNING id")
+	stmt, err := userDB.db.Prepare(`
+		INSERT INTO users
+				(email, password_hash, full_name, created_at, updated_at) 
+			VALUES
+				($1, $2, $3, NOW(), NOW()) 
+			RETURNING id
+	`)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
@@ -51,12 +57,12 @@ func (userDB *UserDataBase) GetUserByID(ctx context.Context, userID []uint8) (mo
 
 	stmt, err := userDB.db.Prepare(`
 		SELECT 
-		id,
-		email, 
-		password_hash, 
-		full_name, 
-		created_at, 
-		updated_at 
+			id,
+			email, 
+			password_hash, 
+			full_name, 
+			created_at, 
+			updated_at 
 		FROM users WHERE id = $1
 	`)
 

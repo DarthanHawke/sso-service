@@ -49,7 +49,7 @@ func (RoleDB *RoleDataBase) CreateRole(
 	if err != nil {
 		var pqErr *pq.Error
 		if errors.As(err, &pqErr) && pqErr.Code == "23505" { // 23505 = unique_violation
-			return errIdRole, fmt.Errorf("%s: %w", op, ssoerrors.ErrUserExists)
+			return errIdRole, fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleExists)
 		}
 
 		return errIdRole, fmt.Errorf("%s: %w", op, err)
@@ -124,7 +124,11 @@ func (RoleDB *RoleDataBase) RevokeRoleFromUser(ctx context.Context, userID []uin
 }
 
 // CheckUserPermission проверяет наличие права у пользователя
-func (RoleDB *RoleDataBase) CheckUserPermission(ctx context.Context, userID []uint8, permission string) (bool, error) {
+func (RoleDB *RoleDataBase) CheckUserPermission(
+	ctx context.Context,
+	userID []uint8,
+	permission string,
+) (bool, error) {
 	const op = "storage.user.CheckUserPermission"
 
 	var exists bool

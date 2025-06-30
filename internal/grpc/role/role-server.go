@@ -4,7 +4,7 @@ import (
 	"context"
 	"sso-service/internal/models"
 
-	ssov1 "github.com/DarthanHawke/protos-payment-system/gen/go/sso"
+	ssogrpc "github.com/DarthanHawke/protos-payment-system/gen/go/sso"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -19,15 +19,18 @@ type Role interface {
 }
 
 type RoleServerAPI struct {
-	ssov1.UnimplementedRoleServiceServer
+	ssogrpc.UnimplementedRoleServiceServer
 	role Role
 }
 
 func NewRoleServer(gRPC *grpc.Server, role Role) {
-	ssov1.RegisterRoleServiceServer(gRPC, &RoleServerAPI{role: role})
+	ssogrpc.RegisterRoleServiceServer(gRPC, &RoleServerAPI{role: role})
 }
 
-func (s *RoleServerAPI) CreateRole(ctx context.Context, req *ssov1.CreateRoleRequest) (*ssov1.CreateRoleResponse, error) {
+func (s *RoleServerAPI) CreateRole(
+	ctx context.Context,
+	req *ssogrpc.CreateRoleRequest,
+) (*ssogrpc.CreateRoleResponse, error) {
 	if req.Name == "" {
 		return nil, status.Error(codes.InvalidArgument, "invalid name role")
 	}
@@ -42,28 +45,37 @@ func (s *RoleServerAPI) CreateRole(ctx context.Context, req *ssov1.CreateRoleReq
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to get tokens")
 	}
-	return &ssov1.CreateRoleResponse{Role: convertRoleToProto(&role)}, nil
+	return &ssogrpc.CreateRoleResponse{Role: convertRoleToProto(&role)}, nil
 }
 
-func (s *RoleServerAPI) AssignRole(ctx context.Context, req *ssov1.AssignRoleRequest) (*ssov1.AssignRoleResponse, error) {
+func (s *RoleServerAPI) AssignRole(
+	ctx context.Context,
+	req *ssogrpc.AssignRoleRequest,
+) (*ssogrpc.AssignRoleResponse, error) {
 	err := s.role.AssignRole(ctx, []uint8(req.GetUserId()), req.GetRoleId())
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to assign role")
 	}
 
-	return &ssov1.AssignRoleResponse{}, nil
+	return &ssogrpc.AssignRoleResponse{}, nil
 }
 
-func (s *RoleServerAPI) RevokeRole(ctx context.Context, req *ssov1.RevokeRoleRequest) (*ssov1.RevokeRoleResponse, error) {
+func (s *RoleServerAPI) RevokeRole(
+	ctx context.Context,
+	req *ssogrpc.RevokeRoleRequest,
+) (*ssogrpc.RevokeRoleResponse, error) {
 	err := s.role.RevokeRole(ctx, []uint8(req.GetUserId()), req.GetRoleId())
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to revoke role")
 	}
 
-	return &ssov1.RevokeRoleResponse{}, nil
+	return &ssogrpc.RevokeRoleResponse{}, nil
 }
 
-func (s *RoleServerAPI) CheckPermission(ctx context.Context, req *ssov1.CheckPermissionRequest) (*ssov1.CheckPermissionResponse, error) {
+func (s *RoleServerAPI) CheckPermission(
+	ctx context.Context,
+	req *ssogrpc.CheckPermissionRequest,
+) (*ssogrpc.CheckPermissionResponse, error) {
 	if req.Permission == "" {
 		return nil, status.Error(codes.InvalidArgument, "invalid role")
 	}
@@ -72,23 +84,26 @@ func (s *RoleServerAPI) CheckPermission(ctx context.Context, req *ssov1.CheckPer
 		return nil, status.Error(codes.Internal, "failed to logout")
 	}
 
-	return &ssov1.CheckPermissionResponse{HasPermission: permission}, nil
+	return &ssogrpc.CheckPermissionResponse{HasPermission: permission}, nil
 }
 
-func (s *RoleServerAPI) GetUserPermissions(ctx context.Context, req *ssov1.GetUserPermissionsRequest) (*ssov1.GetUserPermissionsResponse, error) {
+func (s *RoleServerAPI) GetUserPermissions(
+	ctx context.Context,
+	req *ssogrpc.GetUserPermissionsRequest,
+) (*ssogrpc.GetUserPermissionsResponse, error) {
 	permissions, err := s.role.GetUserPermissions(ctx, []uint8(req.GetUserId()))
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to logout")
 	}
 
-	return &ssov1.GetUserPermissionsResponse{Permissions: permissions}, nil
+	return &ssogrpc.GetUserPermissionsResponse{Permissions: permissions}, nil
 }
 
-func convertRoleToProto(r *models.Role) (role *ssov1.Role) {
+func convertRoleToProto(r *models.Role) (role *ssogrpc.Role) {
 	if r == nil {
 		return nil
 	}
-	return &ssov1.Role{
+	return &ssogrpc.Role{
 		Id:          r.ID,
 		Name:        r.Name,
 		Permissions: r.Permissions,

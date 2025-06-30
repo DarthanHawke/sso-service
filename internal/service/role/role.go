@@ -10,6 +10,10 @@ import (
 	"go.uber.org/zap"
 )
 
+var (
+	nilBool = false
+)
+
 type RoleService struct {
 	logger            *zap.Logger
 	roleManage        RoleManage
@@ -34,7 +38,7 @@ func NewRoleService(
 	permissionsManage PermissionsManage,
 ) *RoleService {
 	return &RoleService{
-		logger:            logger,
+		logger:            logger.With(zap.String("component", "sso_service")),
 		roleManage:        roleManage,
 		permissionsManage: permissionsManage,
 	}
@@ -57,7 +61,7 @@ func (s *RoleService) CreateRole(
 
 	// Валидация
 	if name == "" {
-		s.logger.Info("invalid name", zap.Error(ssoerrors.ErrRoleName))
+		s.logger.Warn("invalid name", zap.Error(ssoerrors.ErrRoleName))
 
 		return models.Role{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleName)
 	}
@@ -65,19 +69,35 @@ func (s *RoleService) CreateRole(
 	// Создание роли
 	id, err := s.roleManage.CreateRole(ctx, name, permissions)
 	if err != nil {
-		s.logger.Error("creating role", zap.Error(err))
+		if errors.Is(err, ssoerrors.ErrRoleExists) {
+			s.logger.Warn("role exists", zap.String("role name", name))
 
-		return models.Role{}, fmt.Errorf("%s: %w", op, err)
+			return models.Role{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleExists)
+		}
+		s.logger.Error("creating role",
+			zap.String("role name", name),
+			zap.Strings("role name", permissions),
+			zap.Error(err),
+		)
+		return models.Role{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
 	// Возвращаем созданную роль
 	role, err := s.roleManage.GetRole(ctx, id)
 	if err != nil {
-		s.logger.Warn("getting role", zap.Error(err))
+		if errors.Is(err, ssoerrors.ErrRoleNotFound) {
+			s.logger.Warn("getting role", zap.Int64("role id", id), zap.Error(err))
 
-		return models.Role{}, fmt.Errorf("%s: %w", op, err)
+			return models.Role{}, ssoerrors.ErrRoleNotFound
+		}
+		s.logger.Warn("getting role", zap.Int64("role id", id), zap.Error(err))
+
+		return models.Role{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
+	s.logger.Debug("Successfully created role",
+		zap.Int64("role_id", role.ID),
+	)
 	return role, nil
 }
 
@@ -99,17 +119,41 @@ func (s *RoleService) AssignRole(
 	_, err := s.roleManage.GetRole(ctx, roleID)
 	if err != nil {
 		if errors.Is(err, ssoerrors.ErrRoleNotFound) {
-			s.logger.Warn("getting role", zap.Error(err))
+			s.logger.Warn("getting role", zap.Int64("role id", roleID), zap.Error(err))
 
 			return ssoerrors.ErrRoleNotFound
 		}
-		s.logger.Warn("getting role", zap.Error(err))
+		s.logger.Warn("getting role", zap.Int64("role id", roleID), zap.Error(err))
+
+		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
+	}
+
+	// Назначаем роль
+	err = s.roleManage.AssignRoleToUser(ctx, userID, roleID)
+	if err != nil {
+		if errors.Is(err, ssoerrors.ErrRoleNotFound) {
+			s.logger.Warn("assigning role",
+				zap.Int64("role id", roleID),
+				zap.Uint8s("user id", userID),
+				zap.Error(err),
+			)
+
+			return ssoerrors.ErrRoleNotFound
+		}
+		s.logger.Error("assigning role",
+			zap.Int64("role id", roleID),
+			zap.Uint8s("user id", userID),
+			zap.Error(err),
+		)
 
 		return fmt.Errorf("%s: %w", op, err)
 	}
 
-	// Назначаем роль
-	return s.roleManage.AssignRoleToUser(ctx, userID, roleID)
+	s.logger.Debug("Successfully assign role to user",
+		zap.Int64("role id", roleID),
+		zap.Uint8s("user id", userID),
+	)
+	return nil
 }
 
 // CheckPermission проверяет право пользователя
@@ -125,7 +169,23 @@ func (s *RoleService) CheckPermission(
 
 	s.logger.Info("checking permission")
 
-	return s.permissionsManage.CheckUserPermission(ctx, userID, permission)
+	perm, err := s.permissionsManage.CheckUserPermission(ctx, userID, permission)
+	if err != nil {
+		s.logger.Warn("cant check",
+			zap.Uint8s("user id", userID),
+			zap.String("permission", permission),
+			zap.Error(err),
+		)
+
+		return nilBool, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
+	}
+
+	s.logger.Debug("Successfully permissions check",
+		zap.Uint8s("user id", userID),
+		zap.String("permission", permission),
+		zap.Bool("res", perm),
+	)
+	return perm, nil
 }
 
 // GetUserPermissions возвращает все права пользователя
@@ -141,7 +201,20 @@ func (s *RoleService) GetUserPermissions(
 
 	s.logger.Info("getting permissions user")
 
-	return s.permissionsManage.ListUserPermissions(ctx, userID)
+	perms, err := s.permissionsManage.ListUserPermissions(ctx, userID)
+	if err != nil {
+		s.logger.Warn("cant get",
+			zap.Uint8s("user id", userID),
+			zap.Error(err),
+		)
+
+		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
+	}
+
+	s.logger.Debug("Successfully getting permissions user",
+		zap.Uint8s("user id", userID),
+	)
+	return perms, nil
 }
 
 // RevokeRole отзывает роль у пользователя
@@ -158,5 +231,29 @@ func (s *RoleService) RevokeRole(
 
 	s.logger.Info("revoking role user")
 
-	return s.roleManage.RevokeRoleFromUser(ctx, userID, roleID)
+	err := s.roleManage.RevokeRoleFromUser(ctx, userID, roleID)
+	if err != nil {
+		if errors.Is(err, ssoerrors.ErrRoleNotAssigned) {
+			s.logger.Warn("revoking role",
+				zap.Int64("role id", roleID),
+				zap.Uint8s("user id", userID),
+				zap.Error(err),
+			)
+
+			return ssoerrors.ErrRoleNotAssigned
+		}
+		s.logger.Error("revoking role",
+			zap.Int64("role id", roleID),
+			zap.Uint8s("user id", userID),
+			zap.Error(err),
+		)
+
+		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
+	}
+
+	s.logger.Debug("Successfully revoke role frome user",
+		zap.Int64("role id", roleID),
+		zap.Uint8s("user id", userID),
+	)
+	return nil
 }

@@ -6,7 +6,7 @@ import (
 	ssoerrors "sso-service/internal/lib/errors"
 	"sso-service/internal/models"
 
-	ssov1 "github.com/DarthanHawke/protos-payment-system/gen/go/sso"
+	ssogrpc "github.com/DarthanHawke/protos-payment-system/gen/go/sso"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -21,15 +21,15 @@ type User interface {
 }
 
 type UserServerAPI struct {
-	ssov1.UnimplementedUserServiceServer
+	ssogrpc.UnimplementedUserServiceServer
 	user User
 }
 
 func NewUserServer(gRPC *grpc.Server, user User) {
-	ssov1.RegisterUserServiceServer(gRPC, &UserServerAPI{user: user})
+	ssogrpc.RegisterUserServiceServer(gRPC, &UserServerAPI{user: user})
 }
 
-func (s *UserServerAPI) Register(ctx context.Context, req *ssov1.RegisterRequest) (*ssov1.RegisterResponse, error) {
+func (s *UserServerAPI) Register(ctx context.Context, req *ssogrpc.RegisterRequest) (*ssogrpc.RegisterResponse, error) {
 	if req.Email == "" {
 		return nil, status.Error(codes.InvalidArgument, "email is required")
 	}
@@ -46,10 +46,10 @@ func (s *UserServerAPI) Register(ctx context.Context, req *ssov1.RegisterRequest
 		return nil, status.Error(codes.Internal, "failed to register user")
 	}
 
-	return &ssov1.RegisterResponse{UserId: string(userId)}, nil
+	return &ssogrpc.RegisterResponse{UserId: string(userId)}, nil
 }
 
-func (s *UserServerAPI) Login(ctx context.Context, req *ssov1.LoginRequest) (*ssov1.LoginResponse, error) {
+func (s *UserServerAPI) Login(ctx context.Context, req *ssogrpc.LoginRequest) (*ssogrpc.LoginResponse, error) {
 	if req.Email == "" {
 		return nil, status.Error(codes.InvalidArgument, "email is required")
 	}
@@ -66,19 +66,19 @@ func (s *UserServerAPI) Login(ctx context.Context, req *ssov1.LoginRequest) (*ss
 		return nil, status.Error(codes.Internal, "Internal error")
 	}
 
-	return &ssov1.LoginResponse{UserId: string(userId)}, nil
+	return &ssogrpc.LoginResponse{UserId: string(userId)}, nil
 }
 
-func (s *UserServerAPI) GetProfile(ctx context.Context, req *ssov1.GetProfileRequest) (*ssov1.GetProfileResponse, error) {
+func (s *UserServerAPI) GetProfile(ctx context.Context, req *ssogrpc.GetProfileRequest) (*ssogrpc.GetProfileResponse, error) {
 	userProfile, err := s.user.GetProfile(ctx, []uint8(req.GetUserId()))
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to get user")
 	}
 
-	return &ssov1.GetProfileResponse{User: convertUserToProto(&userProfile)}, nil
+	return &ssogrpc.GetProfileResponse{User: convertUserToProto(&userProfile)}, nil
 }
 
-func (s *UserServerAPI) UpdateProfile(ctx context.Context, req *ssov1.UpdateProfileRequest) (*ssov1.UpdateProfileResponse, error) {
+func (s *UserServerAPI) UpdateProfile(ctx context.Context, req *ssogrpc.UpdateProfileRequest) (*ssogrpc.UpdateProfileResponse, error) {
 	if *req.Name == "" && *req.Email == "" && *req.Password == "" {
 		return nil, status.Error(codes.InvalidArgument, "incorrect data")
 	}
@@ -88,14 +88,14 @@ func (s *UserServerAPI) UpdateProfile(ctx context.Context, req *ssov1.UpdateProf
 		return nil, status.Error(codes.Internal, "failed to change user")
 	}
 
-	return &ssov1.UpdateProfileResponse{User: convertUserToProto(&userProfile)}, nil
+	return &ssogrpc.UpdateProfileResponse{User: convertUserToProto(&userProfile)}, nil
 }
 
-func convertUserToProto(u *models.User) (user *ssov1.User) {
+func convertUserToProto(u *models.User) (user *ssogrpc.User) {
 	if u == nil {
 		return nil
 	}
-	return &ssov1.User{
+	return &ssogrpc.User{
 		Id:        string(u.ID),
 		Email:     u.Email,
 		FullName:  u.FullName,
