@@ -4,16 +4,17 @@ import (
 	"context"
 
 	ssogrpc "github.com/DarthanHawke/protos-payment-system/gen/go/sso"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 type Session interface {
-	CreateSession(ctx context.Context, userID []uint8) (string, string, error)
-	RefreshSession(ctx context.Context, userID []uint8, refreshToken string) (string, string, error)
-	Logout(ctx context.Context, userID []uint8, sessionID []uint8) error
-	LogoutAll(ctx context.Context, userID []uint8) error
+	CreateSession(ctx context.Context, userID uuid.UUID) (string, string, error)
+	RefreshSession(ctx context.Context, userID uuid.UUID, refreshToken string) (string, string, error)
+	Logout(ctx context.Context, userID, sessionID uuid.UUID) error
+	LogoutAll(ctx context.Context, userID uuid.UUID) error
 }
 
 type SessionServerAPI struct {
@@ -29,7 +30,12 @@ func (s *SessionServerAPI) CreateSession(
 	ctx context.Context,
 	req *ssogrpc.CreateSessionRequest,
 ) (*ssogrpc.CreateSessionResponse, error) {
-	accsessToken, refreshToken, err := s.session.CreateSession(ctx, []uint8(req.GetUserId()))
+	userID, err := uuid.Parse(req.GetUserId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
+	}
+
+	accsessToken, refreshToken, err := s.session.CreateSession(ctx, userID)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to get tokens")
 	}
@@ -44,7 +50,12 @@ func (s *SessionServerAPI) RefreshSession(
 		return nil, status.Error(codes.InvalidArgument, "invalid token")
 	}
 
-	accsessToken, refreshToken, err := s.session.RefreshSession(ctx, []uint8(req.GetUserId()), req.GetRefreshToken())
+	userID, err := uuid.Parse(req.GetUserId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
+	}
+
+	accsessToken, refreshToken, err := s.session.RefreshSession(ctx, userID, req.GetRefreshToken())
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to get tokens")
 	}
@@ -52,8 +63,21 @@ func (s *SessionServerAPI) RefreshSession(
 	return &ssogrpc.RefreshSessionResponse{AccessToken: accsessToken, RefreshToken: refreshToken}, nil
 }
 
-func (s *SessionServerAPI) Logout(ctx context.Context, req *ssogrpc.LogoutRequest) (*ssogrpc.LogoutResponse, error) {
-	err := s.session.Logout(ctx, []uint8(req.GetUserId()), []uint8(req.GetSessionId()))
+func (s *SessionServerAPI) Logout(
+	ctx context.Context,
+	req *ssogrpc.LogoutRequest,
+) (*ssogrpc.LogoutResponse, error) {
+	userID, err := uuid.Parse(req.GetUserId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
+	}
+
+	sessionID, err := uuid.Parse(req.GetSessionId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
+	}
+
+	err = s.session.Logout(ctx, userID, sessionID)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to logout")
 	}
@@ -65,7 +89,12 @@ func (s *SessionServerAPI) LogoutAll(
 	ctx context.Context,
 	req *ssogrpc.LogoutAllRequest,
 ) (*ssogrpc.LogoutAllResponse, error) {
-	err := s.session.LogoutAll(ctx, []uint8(req.GetUserId()))
+	userID, err := uuid.Parse(req.GetUserId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
+	}
+
+	err = s.session.LogoutAll(ctx, userID)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to logout")
 	}

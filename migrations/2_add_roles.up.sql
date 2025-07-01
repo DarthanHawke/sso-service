@@ -1,6 +1,6 @@
 -- Таблица ролей
 CREATE TABLE roles (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(50) UNIQUE NOT NULL,  -- "admin", "user"
     permissions   TEXT[] NOT NULL DEFAULT '{}',
     description TEXT
@@ -9,7 +9,7 @@ CREATE TABLE roles (
 -- Связь пользователей и ролей (Many-to-Many)
 CREATE TABLE user_roles (
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    role_id INT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
     PRIMARY KEY (user_id, role_id)
 );
 

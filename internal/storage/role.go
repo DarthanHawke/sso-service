@@ -8,11 +8,8 @@ import (
 	ssoerrors "sso-service/internal/lib/errors"
 	"sso-service/internal/models"
 
+	"github.com/google/uuid"
 	"github.com/lib/pq"
-)
-
-const (
-	errIdRole = -1
 )
 
 type RoleDataBase struct {
@@ -31,8 +28,8 @@ func (RoleDB *RoleDataBase) CreateRole(
 	ctx context.Context,
 	name string,
 	permissions []string,
-) (int64, error) {
-	const op = "storage.user.CreateRole"
+) (uuid.UUID, error) {
+	const op = "storage.role.CreateRole"
 
 	stmt, err := RoleDB.db.Prepare(`
         INSERT INTO roles (name, permissions)
@@ -40,27 +37,27 @@ func (RoleDB *RoleDataBase) CreateRole(
         RETURNING id
     `)
 	if err != nil {
-		return errIdRole, fmt.Errorf("%s: %w", op, err)
+		return uuid.Nil, fmt.Errorf("%s: %w", op, err)
 	}
 
 	row := stmt.QueryRowContext(ctx, name, pq.Array(permissions))
-	var id int64
+	var id uuid.UUID
 	err = row.Scan(&id)
 	if err != nil {
 		var pqErr *pq.Error
 		if errors.As(err, &pqErr) && pqErr.Code == "23505" { // 23505 = unique_violation
-			return errIdRole, fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleExists)
+			return uuid.Nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleExists)
 		}
 
-		return errIdRole, fmt.Errorf("%s: %w", op, err)
+		return uuid.Nil, fmt.Errorf("%s: %w", op, err)
 	}
 
 	return id, nil
 }
 
 // GetRole возвращает роль по ID
-func (RoleDB *RoleDataBase) GetRole(ctx context.Context, roleID int64) (models.Role, error) {
-	const op = "storage.user.GetRole"
+func (RoleDB *RoleDataBase) GetRole(ctx context.Context, roleID uuid.UUID) (*models.Role, error) {
+	const op = "storage.role.GetRole"
 
 	var role models.Role
 	var perms pq.StringArray
@@ -72,18 +69,18 @@ func (RoleDB *RoleDataBase) GetRole(ctx context.Context, roleID int64) (models.R
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return models.Role{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleNotFound)
+			return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleNotFound)
 		}
-		return models.Role{}, fmt.Errorf("%s: %w", op, err)
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
 	role.Permissions = []string(perms)
-	return role, nil
+	return &role, nil
 }
 
 // AssignRoleToUser назначает роль пользователю
-func (RoleDB *RoleDataBase) AssignRoleToUser(ctx context.Context, userID []uint8, roleID int64) error {
-	const op = "storage.user.AssignRoleToUser"
+func (RoleDB *RoleDataBase) AssignRoleToUser(ctx context.Context, userID, roleID uuid.UUID) error {
+	const op = "storage.role.AssignRoleToUser"
 
 	_, err := RoleDB.db.ExecContext(ctx, `
         INSERT INTO user_roles (user_id, role_id)
@@ -99,8 +96,8 @@ func (RoleDB *RoleDataBase) AssignRoleToUser(ctx context.Context, userID []uint8
 }
 
 // RevokeRoleFromUser отзывает роль у пользователя
-func (RoleDB *RoleDataBase) RevokeRoleFromUser(ctx context.Context, userID []uint8, roleID int64) error {
-	const op = "storage.user.RevokeRoleFromUser"
+func (RoleDB *RoleDataBase) RevokeRoleFromUser(ctx context.Context, userID, roleID uuid.UUID) error {
+	const op = "storage.role.RevokeRoleFromUser"
 
 	result, err := RoleDB.db.ExecContext(ctx, `
         DELETE FROM user_roles
@@ -126,10 +123,10 @@ func (RoleDB *RoleDataBase) RevokeRoleFromUser(ctx context.Context, userID []uin
 // CheckUserPermission проверяет наличие права у пользователя
 func (RoleDB *RoleDataBase) CheckUserPermission(
 	ctx context.Context,
-	userID []uint8,
+	userID uuid.UUID,
 	permission string,
 ) (bool, error) {
-	const op = "storage.user.CheckUserPermission"
+	const op = "storage.role.CheckUserPermission"
 
 	var exists bool
 	err := RoleDB.db.GetContext(ctx, &exists, `
@@ -148,8 +145,8 @@ func (RoleDB *RoleDataBase) CheckUserPermission(
 }
 
 // ListUserPermissions возвращает все права пользователя
-func (RoleDB *RoleDataBase) ListUserPermissions(ctx context.Context, userID []uint8) ([]string, error) {
-	const op = "storage.user.ListUserPermissions"
+func (RoleDB *RoleDataBase) ListUserPermissions(ctx context.Context, userID uuid.UUID) ([]string, error) {
+	const op = "storage.role.ListUserPermissions"
 
 	var permissions []string
 	err := RoleDB.db.SelectContext(ctx, &permissions, `

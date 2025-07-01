@@ -7,6 +7,7 @@ import (
 	ssoerrors "sso-service/internal/lib/errors"
 	"sso-service/internal/models"
 
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -21,15 +22,15 @@ type RoleService struct {
 }
 
 type RoleManage interface {
-	CreateRole(ctx context.Context, name string, permissions []string) (int64, error)
-	GetRole(ctx context.Context, roleID int64) (models.Role, error)
-	AssignRoleToUser(ctx context.Context, userID []uint8, roleID int64) error
-	RevokeRoleFromUser(ctx context.Context, userID []uint8, roleID int64) error
+	CreateRole(ctx context.Context, name string, permissions []string) (uuid.UUID, error)
+	GetRole(ctx context.Context, roleID uuid.UUID) (*models.Role, error)
+	AssignRoleToUser(ctx context.Context, userID, roleID uuid.UUID) error
+	RevokeRoleFromUser(ctx context.Context, userID, roleID uuid.UUID) error
 }
 
 type PermissionsManage interface {
-	CheckUserPermission(ctx context.Context, userID []uint8, permission string) (bool, error)
-	ListUserPermissions(ctx context.Context, userID []uint8) ([]string, error)
+	CheckUserPermission(ctx context.Context, userID uuid.UUID, permission string) (bool, error)
+	ListUserPermissions(ctx context.Context, userID uuid.UUID) ([]string, error)
 }
 
 func NewRoleService(
@@ -49,7 +50,7 @@ func (s *RoleService) CreateRole(
 	ctx context.Context,
 	name string,
 	permissions []string,
-) (models.Role, error) {
+) (*models.Role, error) {
 	const op = "service.role.CreateRole"
 
 	s.logger.With(
@@ -63,7 +64,7 @@ func (s *RoleService) CreateRole(
 	if name == "" {
 		s.logger.Warn("invalid name", zap.Error(ssoerrors.ErrRoleName))
 
-		return models.Role{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleName)
+		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleName)
 	}
 
 	// Создание роли
@@ -72,31 +73,31 @@ func (s *RoleService) CreateRole(
 		if errors.Is(err, ssoerrors.ErrRoleExists) {
 			s.logger.Warn("role exists", zap.String("role name", name))
 
-			return models.Role{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleExists)
+			return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleExists)
 		}
 		s.logger.Error("creating role",
 			zap.String("role name", name),
 			zap.Strings("role name", permissions),
 			zap.Error(err),
 		)
-		return models.Role{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
+		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
 	// Возвращаем созданную роль
 	role, err := s.roleManage.GetRole(ctx, id)
 	if err != nil {
 		if errors.Is(err, ssoerrors.ErrRoleNotFound) {
-			s.logger.Warn("getting role", zap.Int64("role id", id), zap.Error(err))
+			s.logger.Warn("getting role", zap.String("role id", id.String()), zap.Error(err))
 
-			return models.Role{}, ssoerrors.ErrRoleNotFound
+			return nil, ssoerrors.ErrRoleNotFound
 		}
-		s.logger.Warn("getting role", zap.Int64("role id", id), zap.Error(err))
+		s.logger.Warn("getting role", zap.String("role id", id.String()), zap.Error(err))
 
-		return models.Role{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
+		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
 	s.logger.Debug("Successfully created role",
-		zap.Int64("role_id", role.ID),
+		zap.String("role_id", role.ID.String()),
 	)
 	return role, nil
 }
@@ -104,8 +105,7 @@ func (s *RoleService) CreateRole(
 // AssignRole назначает роль пользователю с проверками
 func (s *RoleService) AssignRole(
 	ctx context.Context,
-	userID []uint8,
-	roleID int64,
+	userID, roleID uuid.UUID,
 ) error {
 	const op = "service.role.AssignRole"
 
@@ -119,11 +119,11 @@ func (s *RoleService) AssignRole(
 	_, err := s.roleManage.GetRole(ctx, roleID)
 	if err != nil {
 		if errors.Is(err, ssoerrors.ErrRoleNotFound) {
-			s.logger.Warn("getting role", zap.Int64("role id", roleID), zap.Error(err))
+			s.logger.Warn("getting role", zap.String("role id", roleID.String()), zap.Error(err))
 
 			return ssoerrors.ErrRoleNotFound
 		}
-		s.logger.Warn("getting role", zap.Int64("role id", roleID), zap.Error(err))
+		s.logger.Warn("getting role", zap.String("role id", roleID.String()), zap.Error(err))
 
 		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
@@ -133,16 +133,16 @@ func (s *RoleService) AssignRole(
 	if err != nil {
 		if errors.Is(err, ssoerrors.ErrRoleNotFound) {
 			s.logger.Warn("assigning role",
-				zap.Int64("role id", roleID),
-				zap.Uint8s("user id", userID),
+				zap.String("role id", roleID.String()),
+				zap.String("user id", userID.String()),
 				zap.Error(err),
 			)
 
 			return ssoerrors.ErrRoleNotFound
 		}
 		s.logger.Error("assigning role",
-			zap.Int64("role id", roleID),
-			zap.Uint8s("user id", userID),
+			zap.String("role id", roleID.String()),
+			zap.String("user id", userID.String()),
 			zap.Error(err),
 		)
 
@@ -150,8 +150,8 @@ func (s *RoleService) AssignRole(
 	}
 
 	s.logger.Debug("Successfully assign role to user",
-		zap.Int64("role id", roleID),
-		zap.Uint8s("user id", userID),
+		zap.String("role id", roleID.String()),
+		zap.String("user id", userID.String()),
 	)
 	return nil
 }
@@ -159,7 +159,7 @@ func (s *RoleService) AssignRole(
 // CheckPermission проверяет право пользователя
 func (s *RoleService) CheckPermission(
 	ctx context.Context,
-	userID []uint8, permission string,
+	userID uuid.UUID, permission string,
 ) (bool, error) {
 	const op = "service.role.CheckPermission"
 
@@ -172,7 +172,7 @@ func (s *RoleService) CheckPermission(
 	perm, err := s.permissionsManage.CheckUserPermission(ctx, userID, permission)
 	if err != nil {
 		s.logger.Warn("cant check",
-			zap.Uint8s("user id", userID),
+			zap.String("user id", userID.String()),
 			zap.String("permission", permission),
 			zap.Error(err),
 		)
@@ -181,7 +181,7 @@ func (s *RoleService) CheckPermission(
 	}
 
 	s.logger.Debug("Successfully permissions check",
-		zap.Uint8s("user id", userID),
+		zap.String("user id", userID.String()),
 		zap.String("permission", permission),
 		zap.Bool("res", perm),
 	)
@@ -191,7 +191,7 @@ func (s *RoleService) CheckPermission(
 // GetUserPermissions возвращает все права пользователя
 func (s *RoleService) GetUserPermissions(
 	ctx context.Context,
-	userID []uint8,
+	userID uuid.UUID,
 ) ([]string, error) {
 	const op = "service.role.GetUserPermissions"
 
@@ -204,7 +204,7 @@ func (s *RoleService) GetUserPermissions(
 	perms, err := s.permissionsManage.ListUserPermissions(ctx, userID)
 	if err != nil {
 		s.logger.Warn("cant get",
-			zap.Uint8s("user id", userID),
+			zap.String("user id", userID.String()),
 			zap.Error(err),
 		)
 
@@ -212,7 +212,7 @@ func (s *RoleService) GetUserPermissions(
 	}
 
 	s.logger.Debug("Successfully getting permissions user",
-		zap.Uint8s("user id", userID),
+		zap.String("user id", userID.String()),
 	)
 	return perms, nil
 }
@@ -220,8 +220,7 @@ func (s *RoleService) GetUserPermissions(
 // RevokeRole отзывает роль у пользователя
 func (s *RoleService) RevokeRole(
 	ctx context.Context,
-	userID []uint8,
-	roleID int64,
+	userID, roleID uuid.UUID,
 ) error {
 	const op = "service.role.RevokeRole"
 
@@ -235,16 +234,16 @@ func (s *RoleService) RevokeRole(
 	if err != nil {
 		if errors.Is(err, ssoerrors.ErrRoleNotAssigned) {
 			s.logger.Warn("revoking role",
-				zap.Int64("role id", roleID),
-				zap.Uint8s("user id", userID),
+				zap.String("role id", roleID.String()),
+				zap.String("user id", userID.String()),
 				zap.Error(err),
 			)
 
 			return ssoerrors.ErrRoleNotAssigned
 		}
 		s.logger.Error("revoking role",
-			zap.Int64("role id", roleID),
-			zap.Uint8s("user id", userID),
+			zap.String("role id", roleID.String()),
+			zap.String("user id", userID.String()),
 			zap.Error(err),
 		)
 
@@ -252,8 +251,8 @@ func (s *RoleService) RevokeRole(
 	}
 
 	s.logger.Debug("Successfully revoke role frome user",
-		zap.Int64("role id", roleID),
-		zap.Uint8s("user id", userID),
+		zap.String("role id", roleID.String()),
+		zap.String("user id", userID.String()),
 	)
 	return nil
 }

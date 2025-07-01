@@ -5,17 +5,18 @@ import (
 	"sso-service/internal/models"
 
 	ssogrpc "github.com/DarthanHawke/protos-payment-system/gen/go/sso"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 type Role interface {
-	CreateRole(ctx context.Context, name string, permissions []string) (models.Role, error)
-	AssignRole(ctx context.Context, userID []uint8, roleID int64) error
-	RevokeRole(ctx context.Context, userID []uint8, roleID int64) error
-	CheckPermission(ctx context.Context, userID []uint8, permission string) (bool, error)
-	GetUserPermissions(ctx context.Context, userID []uint8) ([]string, error)
+	CreateRole(ctx context.Context, name string, permissions []string) (*models.Role, error)
+	AssignRole(ctx context.Context, userID, roleID uuid.UUID) error
+	RevokeRole(ctx context.Context, userID, roleID uuid.UUID) error
+	CheckPermission(ctx context.Context, userID uuid.UUID, permission string) (bool, error)
+	GetUserPermissions(ctx context.Context, userID uuid.UUID) ([]string, error)
 }
 
 type RoleServerAPI struct {
@@ -45,14 +46,24 @@ func (s *RoleServerAPI) CreateRole(
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to get tokens")
 	}
-	return &ssogrpc.CreateRoleResponse{Role: convertRoleToProto(&role)}, nil
+	return &ssogrpc.CreateRoleResponse{Role: convertRoleToProto(role)}, nil
 }
 
 func (s *RoleServerAPI) AssignRole(
 	ctx context.Context,
 	req *ssogrpc.AssignRoleRequest,
 ) (*ssogrpc.AssignRoleResponse, error) {
-	err := s.role.AssignRole(ctx, []uint8(req.GetUserId()), req.GetRoleId())
+	userID, err := uuid.Parse(req.GetUserId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
+	}
+
+	roleID, err := uuid.Parse(req.GetRoleId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
+	}
+
+	err = s.role.AssignRole(ctx, userID, roleID)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to assign role")
 	}
@@ -64,7 +75,17 @@ func (s *RoleServerAPI) RevokeRole(
 	ctx context.Context,
 	req *ssogrpc.RevokeRoleRequest,
 ) (*ssogrpc.RevokeRoleResponse, error) {
-	err := s.role.RevokeRole(ctx, []uint8(req.GetUserId()), req.GetRoleId())
+	userID, err := uuid.Parse(req.GetUserId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
+	}
+
+	roleID, err := uuid.Parse(req.GetRoleId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
+	}
+
+	err = s.role.RevokeRole(ctx, userID, roleID)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to revoke role")
 	}
@@ -79,7 +100,13 @@ func (s *RoleServerAPI) CheckPermission(
 	if req.Permission == "" {
 		return nil, status.Error(codes.InvalidArgument, "invalid role")
 	}
-	permission, err := s.role.CheckPermission(ctx, []uint8(req.GetUserId()), req.GetPermission())
+
+	userID, err := uuid.Parse(req.GetUserId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
+	}
+
+	permission, err := s.role.CheckPermission(ctx, userID, req.GetPermission())
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to logout")
 	}
@@ -91,7 +118,12 @@ func (s *RoleServerAPI) GetUserPermissions(
 	ctx context.Context,
 	req *ssogrpc.GetUserPermissionsRequest,
 ) (*ssogrpc.GetUserPermissionsResponse, error) {
-	permissions, err := s.role.GetUserPermissions(ctx, []uint8(req.GetUserId()))
+	userID, err := uuid.Parse(req.GetUserId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
+	}
+
+	permissions, err := s.role.GetUserPermissions(ctx, userID)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to logout")
 	}
@@ -104,7 +136,7 @@ func convertRoleToProto(r *models.Role) (role *ssogrpc.Role) {
 		return nil
 	}
 	return &ssogrpc.Role{
-		Id:          r.ID,
+		Id:          r.ID.String(),
 		Name:        r.Name,
 		Permissions: r.Permissions,
 		Description: r.Description,

@@ -10,6 +10,7 @@ import (
 
 	"time"
 
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -26,7 +27,7 @@ type SessionService struct {
 }
 
 type JWTManager interface {
-	GenerateAccessToken(userID []uint8) (string, error)
+	GenerateAccessToken(userID, sessionID uuid.UUID) (string, error)
 	GenerateRefreshToken() (string, error)
 	GetAccessTokenTTL() time.Duration
 	GetRefreshTokenTTL() time.Duration
@@ -37,14 +38,14 @@ type HashManager interface {
 }
 
 type SessionManage interface {
-	CreateSession(ctx context.Context, userID []uint8, refreshToken string, expiresAt time.Time) error
-	DeleteSession(ctx context.Context, sessionID []uint8) error
-	DeleteAllUserSessions(ctx context.Context, userID []uint8) error
+	CreateSession(ctx context.Context, userID uuid.UUID, refreshToken string, expiresAt time.Time) error
+	DeleteSession(ctx context.Context, sessionID uuid.UUID) error
+	DeleteAllUserSessions(ctx context.Context, userID uuid.UUID) error
 }
 
 type SessionGet interface {
-	GetSessionByToken(ctx context.Context, refreshToken string) (models.Session, error)
-	GetUserSessions(ctx context.Context, userID []uint8) ([]models.Session, error)
+	GetSessionByToken(ctx context.Context, refreshToken string) (*models.Session, error)
+	GetUserSessions(ctx context.Context, userID uuid.UUID) (*[]models.Session, error)
 	IsSessionValid(ctx context.Context, refreshToken string) (bool, error)
 }
 
@@ -65,7 +66,7 @@ func NewSessionService(
 }
 
 // CreateSession - cоздание сессии
-func (s *SessionService) CreateSession(ctx context.Context, userID []uint8) (string, string, error) {
+func (s *SessionService) CreateSession(ctx context.Context, userID uuid.UUID) (string, string, error) {
 	const op = "service.session.CreateRole"
 
 	s.logger.With(
@@ -77,30 +78,37 @@ func (s *SessionService) CreateSession(ctx context.Context, userID []uint8) (str
 	// Генерация токенов
 	refreshToken, err := s.jwtManager.GenerateRefreshToken()
 	if err != nil {
-		s.logger.Error("generate refresh token", zap.Uint8s("UserID", userID), zap.Error(err))
+		s.logger.Error("generate refresh token", zap.String("UserID", userID.String()), zap.Error(err))
 
 		return nilToken, nilToken, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
-	accessToken, err := s.jwtManager.GenerateAccessToken(userID)
-	if err != nil {
-		s.logger.Error("generate accsess token", zap.Uint8s("UserID", userID), zap.Error(err))
-
-		return nilToken, nilToken, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
-	}
-
 	// Хеширование токена
 	refreshTokenHash := s.hasher.HashToken(refreshToken)
 
 	expiresAt := time.Now().Add(s.jwtManager.GetRefreshTokenTTL())
 
 	if err := s.sessionManage.CreateSession(ctx, userID, refreshTokenHash, expiresAt); err != nil {
-		s.logger.Error("hashing token", zap.Uint8s("UserID", userID), zap.Error(err))
+		s.logger.Error("hashing token", zap.String("UserID", userID.String()), zap.Error(err))
+
+		return nilToken, nilToken, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
+	}
+
+	session, err := s.sessionGet.GetSessionByToken(ctx, refreshTokenHash)
+	if err != nil {
+		s.logger.Error("get session", zap.String("UserID", userID.String()), zap.Error(err))
+
+		return nilToken, nilToken, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
+	}
+
+	accessToken, err := s.jwtManager.GenerateAccessToken(userID, session.ID)
+	if err != nil {
+		s.logger.Error("generate accsess token", zap.String("UserID", userID.String()), zap.Error(err))
 
 		return nilToken, nilToken, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
 	s.logger.Debug("Successfully created session",
-		zap.Uint8s("UserID", userID),
+		zap.String("UserID", userID.String()),
 	)
 	return accessToken, refreshToken, nil
 }
@@ -108,7 +116,7 @@ func (s *SessionService) CreateSession(ctx context.Context, userID []uint8) (str
 // RefreshSession - обновление сессии
 func (s *SessionService) RefreshSession(
 	ctx context.Context,
-	userID []uint8,
+	userID uuid.UUID,
 	refreshToken string,
 ) (string, string, error) {
 	const op = "service.session.RefreshSession"
@@ -125,11 +133,11 @@ func (s *SessionService) RefreshSession(
 	oldSession, err := s.sessionGet.GetSessionByToken(ctx, refreshTokenHash)
 	if err != nil {
 		if errors.Is(err, ssoerrors.ErrSessionNotFound) {
-			s.logger.Warn("sessinon dont get", zap.Uint8s("UserID", userID), zap.Error(err))
+			s.logger.Warn("sessinon dont get", zap.String("UserID", userID.String()), zap.Error(err))
 
 			return nilToken, nilToken, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 		}
-		s.logger.Warn("sessinon dont get", zap.Uint8s("UserID", userID), zap.Error(err))
+		s.logger.Warn("sessinon dont get", zap.String("UserID", userID.String()), zap.Error(err))
 
 		return nilToken, nilToken, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
@@ -142,8 +150,8 @@ func (s *SessionService) RefreshSession(
 	// Удаляем старую сессию
 	if err := s.sessionManage.DeleteSession(ctx, oldSession.ID); err != nil {
 		s.logger.Error("cannot delete session",
-			zap.Uint8s("UserID", userID),
-			zap.Uint8s("SessionID", oldSession.ID),
+			zap.String("UserID", userID.String()),
+			zap.String("SessionID", oldSession.ID.String()),
 			zap.Error(err),
 		)
 
@@ -155,7 +163,7 @@ func (s *SessionService) RefreshSession(
 }
 
 // Logout - выход (удаление сессии)
-func (s *SessionService) Logout(ctx context.Context, userID []uint8, sessionID []uint8) error {
+func (s *SessionService) Logout(ctx context.Context, userID, sessionID uuid.UUID) error {
 	const op = "service.session.Logout"
 
 	s.logger.With(
@@ -166,23 +174,23 @@ func (s *SessionService) Logout(ctx context.Context, userID []uint8, sessionID [
 
 	if err := s.sessionManage.DeleteSession(ctx, sessionID); err != nil {
 		if errors.Is(err, ssoerrors.ErrSessionNotFound) {
-			s.logger.Warn("cannot delete session", zap.Uint8s("SessionID", sessionID), zap.Error(err))
+			s.logger.Warn("cannot delete session", zap.String("SessionID", sessionID.String()), zap.Error(err))
 
 			return fmt.Errorf("%s: %w", op, ssoerrors.ErrSessionNotFound)
 		}
-		s.logger.Error("cannot delete session", zap.Uint8s("SessionID", sessionID), zap.Error(err))
+		s.logger.Error("cannot delete session", zap.String("SessionID", sessionID.String()), zap.Error(err))
 
 		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
 	s.logger.Debug("Successfully logout",
-		zap.Uint8s("UserID", userID),
+		zap.String("UserID", userID.String()),
 	)
 	return nil
 }
 
 // LogoutAll - выход со всех устройств
-func (s *SessionService) LogoutAll(ctx context.Context, userID []uint8) error {
+func (s *SessionService) LogoutAll(ctx context.Context, userID uuid.UUID) error {
 	const op = "service.session.LogoutAll"
 
 	s.logger.With(
@@ -192,13 +200,13 @@ func (s *SessionService) LogoutAll(ctx context.Context, userID []uint8) error {
 	s.logger.Info("logout all session")
 
 	if err := s.sessionManage.DeleteAllUserSessions(ctx, userID); err != nil {
-		s.logger.Error("cannot delete sessions", zap.Uint8s("UserID", userID), zap.Error(err))
+		s.logger.Error("cannot delete sessions", zap.String("UserID", userID.String()), zap.Error(err))
 
 		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
 	s.logger.Debug("Successfully logout from all devices",
-		zap.Uint8s("UserID", userID),
+		zap.String("UserID", userID.String()),
 	)
 	return nil
 }

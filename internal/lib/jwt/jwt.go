@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 // Конфиг
@@ -93,9 +94,10 @@ func (g *TokenGenerator) GetRefreshTokenTTL() time.Duration {
 }
 
 // GenerateAccessToken создает JWT Access токен
-func (g *TokenGenerator) GenerateAccessToken(userID []uint8) (string, error) {
+func (g *TokenGenerator) GenerateAccessToken(userID, sessionID uuid.UUID) (string, error) {
 	claims := models.AccessTokenClaims{
-		UserID: userID,
+		UserID:    userID,
+		SessionID: sessionID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(g.config.accessTokenTTL)),
 			Issuer:    g.config.issuer,

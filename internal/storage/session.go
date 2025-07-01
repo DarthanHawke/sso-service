@@ -8,6 +8,8 @@ import (
 	ssoerrors "sso-service/internal/lib/errors"
 	"sso-service/internal/models"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type SessionDataBase struct {
@@ -23,11 +25,11 @@ func NewSessionDataBase(db *Database) *SessionDataBase {
 
 func (sessionDB *SessionDataBase) CreateSession(
 	ctx context.Context,
-	userID []uint8,
+	userID uuid.UUID,
 	refreshToken string,
 	expiresAt time.Time,
 ) error {
-	const op = "storage.user.CreateSession"
+	const op = "storage.session.CreateSession"
 
 	ip, _ := ctx.Value("ip").(string)
 
@@ -69,8 +71,8 @@ func (sessionDB *SessionDataBase) CreateSession(
 func (sessionDB *SessionDataBase) GetSessionByToken(
 	ctx context.Context,
 	refreshToken string,
-) (models.Session, error) {
-	const op = "storage.user.GetSessionByToken"
+) (*models.Session, error) {
+	const op = "storage.session.GetSessionByToken"
 
 	var session models.Session
 	err := sessionDB.db.GetContext(ctx, &session, `
@@ -88,22 +90,22 @@ func (sessionDB *SessionDataBase) GetSessionByToken(
 	)
 
 	if errors.Is(err, sql.ErrNoRows) {
-		return models.Session{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrSessionNotFound)
+		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrSessionNotFound)
 	}
 
 	if err != nil {
-		return models.Session{}, fmt.Errorf("%s: %w", op, err)
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
-	return session, nil
+	return &session, nil
 }
 
 // GetUserSessions возвращает все активные сессии пользователя
 func (sessionDB *SessionDataBase) GetUserSessions(
 	ctx context.Context,
-	userID []uint8,
-) ([]models.Session, error) {
-	const op = "repository.GetUserSessions"
+	userID uuid.UUID,
+) (*[]models.Session, error) {
+	const op = "storage.session.GetUserSessions"
 
 	var sessions []models.Session
 	err := sessionDB.db.SelectContext(ctx, &sessions, `
@@ -125,12 +127,12 @@ func (sessionDB *SessionDataBase) GetUserSessions(
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
-	return sessions, nil
+	return &sessions, nil
 }
 
 // DeleteSession удаляет конкретную сессию по ID
-func (sessionDB *SessionDataBase) DeleteSession(ctx context.Context, sessionID []uint8) error {
-	const op = "storage.user.DeleteSession"
+func (sessionDB *SessionDataBase) DeleteSession(ctx context.Context, sessionID uuid.UUID) error {
+	const op = "storage.session.DeleteSession"
 
 	result, err := sessionDB.db.ExecContext(ctx, `
         DELETE FROM sessions 
@@ -155,8 +157,8 @@ func (sessionDB *SessionDataBase) DeleteSession(ctx context.Context, sessionID [
 }
 
 // DeleteAllUserSessions удаляет все сессии пользователя
-func (sessionDB *SessionDataBase) DeleteAllUserSessions(ctx context.Context, userID []uint8) error {
-	const op = "storage.user.DeleteAllUserSessions"
+func (sessionDB *SessionDataBase) DeleteAllUserSessions(ctx context.Context, userID uuid.UUID) error {
+	const op = "storage.session.DeleteAllUserSessions"
 
 	_, err := sessionDB.db.ExecContext(ctx, `
         DELETE FROM sessions 
@@ -173,7 +175,7 @@ func (sessionDB *SessionDataBase) DeleteAllUserSessions(ctx context.Context, use
 
 // IsSessionValid проверяет валидность сессии
 func (sessionDB *SessionDataBase) IsSessionValid(ctx context.Context, refreshToken string) (bool, error) {
-	const op = "storage.user.IsSessionValid"
+	const op = "storage.session.IsSessionValid"
 
 	var exists bool
 	err := sessionDB.db.GetContext(ctx, &exists, `

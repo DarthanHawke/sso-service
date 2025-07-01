@@ -8,6 +8,8 @@ import (
 	ssoerrors "sso-service/internal/lib/errors"
 	"sso-service/internal/models"
 
+	"github.com/google/uuid"
+
 	"github.com/lib/pq"
 )
 
@@ -23,7 +25,7 @@ func NewUserDataBase(db *Database) *UserDataBase {
 }
 
 // CreateUser создаёт нового пользователя models.User, используя email, passwordHash, fullName string, возвращает userID
-func (userDB *UserDataBase) CreateUser(ctx context.Context, email, passwordHash, fullName string) ([]uint8, error) {
+func (userDB *UserDataBase) CreateUser(ctx context.Context, email, passwordHash, fullName string) (uuid.UUID, error) {
 	const op = "storage.user.CreateUser"
 
 	stmt, err := userDB.db.Prepare(`
@@ -34,25 +36,25 @@ func (userDB *UserDataBase) CreateUser(ctx context.Context, email, passwordHash,
 			RETURNING id
 	`)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
+		return uuid.Nil, fmt.Errorf("%s: %w", op, err)
 	}
 
 	row := stmt.QueryRowContext(ctx, email, passwordHash, fullName)
-	var id []uint8
+	var id uuid.UUID
 	err = row.Scan(&id)
 	if err != nil {
 		var pqErr *pq.Error
 		if errors.As(err, &pqErr) && pqErr.Code == "23505" { // 23505 = unique_violation
-			return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrUserExists)
+			return uuid.Nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrUserExists)
 		}
 
-		return nil, fmt.Errorf("%s: %w", op, err)
+		return uuid.Nil, fmt.Errorf("%s: %w", op, err)
 	}
 	return id, nil
 }
 
 // GetUserByID возвращант пользователя models.User, используя userID
-func (userDB *UserDataBase) GetUserByID(ctx context.Context, userID []uint8) (models.User, error) {
+func (userDB *UserDataBase) GetUserByID(ctx context.Context, userID uuid.UUID) (*models.User, error) {
 	const op = "storage.user.GetUserByID"
 
 	stmt, err := userDB.db.Prepare(`
@@ -67,7 +69,7 @@ func (userDB *UserDataBase) GetUserByID(ctx context.Context, userID []uint8) (mo
 	`)
 
 	if err != nil {
-		return models.User{}, fmt.Errorf("%s: %w", op, err)
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
 	row := stmt.QueryRowContext(ctx, userID)
@@ -76,17 +78,17 @@ func (userDB *UserDataBase) GetUserByID(ctx context.Context, userID []uint8) (mo
 	err = row.Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FullName, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return models.User{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrUserNotFound)
+			return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrUserNotFound)
 		}
 
-		return models.User{}, fmt.Errorf("%s: %w", op, err)
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
-	return user, nil
+	return &user, nil
 }
 
 // GetUserByEmail возвращант пользователя models.User, используя email
-func (userDB *UserDataBase) GetUserByEmail(ctx context.Context, email string) (models.User, error) {
+func (userDB *UserDataBase) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
 	const op = "storage.user.GetUserByEmail"
 
 	stmt, err := userDB.db.Prepare(`
@@ -101,7 +103,7 @@ func (userDB *UserDataBase) GetUserByEmail(ctx context.Context, email string) (m
 	`)
 
 	if err != nil {
-		return models.User{}, fmt.Errorf("%s: %w", op, err)
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
 	row := stmt.QueryRowContext(ctx, email)
@@ -110,17 +112,17 @@ func (userDB *UserDataBase) GetUserByEmail(ctx context.Context, email string) (m
 	err = row.Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FullName, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return models.User{}, fmt.Errorf("%s: %w", op, ssoerrors.ErrUserNotFound)
+			return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrUserNotFound)
 		}
 
-		return models.User{}, fmt.Errorf("%s: %w", op, err)
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
-	return user, nil
+	return &user, nil
 }
 
 // GetListUsers возвращает список всех пользователей
-func (userDB *UserDataBase) GetListUsers(ctx context.Context, limit, offset int) ([]models.User, error) {
+func (userDB *UserDataBase) GetListUsers(ctx context.Context, limit, offset int) (*[]models.User, error) {
 	const op = "storage.user.GetListUsers"
 
 	var users []models.User
@@ -142,11 +144,11 @@ func (userDB *UserDataBase) GetListUsers(ctx context.Context, limit, offset int)
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
-	return users, nil
+	return &users, nil
 }
 
 // UpdateUser обновляет email и/или fullName пользователя models.User, используя userID
-func (userDB *UserDataBase) UpdateUserEmail(ctx context.Context, userID []uint8, email string) error {
+func (userDB *UserDataBase) UpdateUserEmail(ctx context.Context, userID uuid.UUID, email string) error {
 	const op = "storage.user.UpdateUserEmail"
 
 	stmt, err := userDB.db.Prepare("UPDATE users SET email = $1, updated_at = NOW() WHERE id = $2")
@@ -171,7 +173,7 @@ func (userDB *UserDataBase) UpdateUserEmail(ctx context.Context, userID []uint8,
 }
 
 // UpdateUser обновляет email и/или fullName пользователя models.User, используя userID
-func (userDB *UserDataBase) UpdateUserName(ctx context.Context, userID []uint8, fullName string) error {
+func (userDB *UserDataBase) UpdateUserName(ctx context.Context, userID uuid.UUID, fullName string) error {
 	const op = "storage.user.UpdateUserName"
 
 	stmt, err := userDB.db.Prepare("UPDATE users SET full_name = $1, updated_at = NOW() WHERE id = $2")
@@ -196,7 +198,7 @@ func (userDB *UserDataBase) UpdateUserName(ctx context.Context, userID []uint8, 
 }
 
 // UpdateUser обновляет email и/или fullName пользователя models.User, используя userID
-func (userDB *UserDataBase) UpdateUserPassword(ctx context.Context, userID []uint8, newPasswordHash string) error {
+func (userDB *UserDataBase) UpdateUserPassword(ctx context.Context, userID uuid.UUID, newPasswordHash string) error {
 	const op = "storage.user.UpdateUserPassword"
 
 	stmt, err := userDB.db.Prepare("UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2")
@@ -221,7 +223,7 @@ func (userDB *UserDataBase) UpdateUserPassword(ctx context.Context, userID []uin
 }
 
 // DeleteUser "мягкое" удаление пользователя по userID
-func (userDB *UserDataBase) DeleteUser(ctx context.Context, userID []uint8) error {
+func (userDB *UserDataBase) DeleteUser(ctx context.Context, userID uuid.UUID) error {
 	const op = "storage.user.DeleteUser"
 
 	// Используем транзакцию, так как нужно удалить связанные данные
