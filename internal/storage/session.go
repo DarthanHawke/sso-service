@@ -112,11 +112,7 @@ func (sessionDB *SessionDataBase) GetUserSessions(
         SELECT 
             id, 
             user_id, 
-            refresh_token_hash, 
-            user_ip, 
-            user_agent, 
             expires_at,
-			created_at
         FROM sessions
         WHERE user_id = $1 AND expires_at > NOW()
         ORDER BY created_at DESC`,

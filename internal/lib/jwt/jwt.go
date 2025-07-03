@@ -98,6 +98,7 @@ func (g *TokenGenerator) GenerateAccessToken(userID, sessionID uuid.UUID) (strin
 	claims := models.AccessTokenClaims{
 		UserID:    userID,
 		SessionID: sessionID,
+		TokenType: "access",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(g.config.accessTokenTTL)),
 			Issuer:    g.config.issuer,
@@ -111,9 +112,12 @@ func (g *TokenGenerator) GenerateAccessToken(userID, sessionID uuid.UUID) (strin
 
 // GenerateRefreshToken создает Refresh токен
 func (g *TokenGenerator) GenerateRefreshToken() (string, error) {
-	claims := jwt.RegisteredClaims{
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(g.config.refreshTokenTTL)),
-		Issuer:    g.config.issuer,
+	claims := models.RefreshTokenClaims{
+		TokenType: "refresh",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(g.config.refreshTokenTTL)),
+			Issuer:    g.config.issuer,
+		},
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)

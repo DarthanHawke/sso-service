@@ -15,3 +15,8 @@ type Session struct {
 	ExpiresAt        time.Time `json:"expires_at" db:"expires_at"`
 	CreatedAt        time.Time `json:"created_at" db:"created_at"`
 }
+
+type UserSession struct {
+	AcssesToken  string `json:"AcssesToken"`
+	RefreshToken string `json:"RefreshToken"`
+}
