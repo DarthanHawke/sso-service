@@ -112,7 +112,7 @@ func (sessionDB *SessionDataBase) GetUserSessions(
         SELECT 
             id, 
             user_id, 
-            expires_at,
+            expires_at
         FROM sessions
         WHERE user_id = $1 AND expires_at > NOW()
         ORDER BY created_at DESC`,

@@ -204,6 +204,11 @@ func (s *UserService) UpdateProfile(
 		}
 	}
 	if email != "" {
+		// Валидация
+		if err := validator.ValidateEmail(email); err != nil {
+			s.logger.Warn("invalide email", zap.String("email", email), zap.Error(err))
+			return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInvalidEmail)
+		}
 		if err := s.userManage.UpdateUserEmail(ctx, userID, email); err != nil {
 			if errors.Is(err, ssoerrors.ErrUserExists) {
 				s.logger.Warn("user not found", zap.Error(ssoerrors.ErrUserExists))
@@ -216,6 +221,11 @@ func (s *UserService) UpdateProfile(
 		}
 	}
 	if password != "" {
+		// Валидация
+		if err := validator.ValidatePassword(password); err != nil {
+			s.logger.Warn("invalide password", zap.Error(err))
+			return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrPasswordTooWeak)
+		}
 		// Хеширование пароля
 		passwordHash, err := s.hasher.GenerateHash(password)
 		if err != nil {
