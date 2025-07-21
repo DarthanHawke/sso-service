@@ -14,14 +14,6 @@ import (
 	"go.uber.org/zap"
 )
 
-type SessionService struct {
-	logger        *zap.Logger
-	sessionManage SessionManage
-	sessionGet    SessionGet
-	jwtManager    JWTManager
-	hasher        HashManager
-}
-
 type JWTManager interface {
 	GenerateAccessToken(userID, sessionID uuid.UUID) (string, error)
 	GenerateRefreshToken() (string, error)
@@ -34,7 +26,13 @@ type HashManager interface {
 }
 
 type SessionManage interface {
-	CreateSession(ctx context.Context, userID uuid.UUID, refreshToken string, expiresAt time.Time) error
+	CreateSession(
+		ctx context.Context,
+		userID uuid.UUID,
+		refreshToken string,
+		ip, userAgent string,
+		expiresAt time.Time,
+	) error
 	DeleteSession(ctx context.Context, sessionID uuid.UUID) error
 	DeleteAllUserSessions(ctx context.Context, userID uuid.UUID) error
 }
@@ -42,7 +40,14 @@ type SessionManage interface {
 type SessionGet interface {
 	GetSessionByToken(ctx context.Context, refreshToken string) (*models.Session, error)
 	GetUserSessions(ctx context.Context, userID uuid.UUID) (*[]models.Session, error)
-	IsSessionValid(ctx context.Context, refreshToken string) (bool, error)
+}
+
+type SessionService struct {
+	logger        *zap.Logger
+	sessionManage SessionManage
+	sessionGet    SessionGet
+	jwtManager    JWTManager
+	hasher        HashManager
 }
 
 func NewSessionService(
@@ -83,7 +88,16 @@ func (s *SessionService) CreateSession(ctx context.Context, userID uuid.UUID) (*
 
 	expiresAt := time.Now().Add(s.jwtManager.GetRefreshTokenTTL())
 
-	if err := s.sessionManage.CreateSession(ctx, userID, refreshTokenHash, expiresAt); err != nil {
+	userIP, ok := ctx.Value(models.IPKey).(string)
+	if !ok {
+		userIP = ""
+	}
+	userAgent, ok := ctx.Value(models.UserAgentKey).(string)
+	if !ok {
+		userAgent = ""
+	}
+
+	if err := s.sessionManage.CreateSession(ctx, userID, refreshTokenHash, userIP, userAgent, expiresAt); err != nil {
 		s.logger.Error("hashing token", zap.String("UserID", userID.String()), zap.Error(err))
 
 		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)

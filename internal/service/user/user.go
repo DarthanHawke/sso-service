@@ -12,13 +12,6 @@ import (
 	"go.uber.org/zap"
 )
 
-type UserService struct {
-	logger     *zap.Logger
-	userManage UserManage
-	userGet    UserGet
-	hasher     Argon2Manager
-}
-
 type Argon2Manager interface {
 	GenerateHash(data string) (string, error)
 	CompareHashAndData(data, encodedHash string) (bool, error)
@@ -26,7 +19,11 @@ type Argon2Manager interface {
 
 type UserManage interface {
 	CreateUser(ctx context.Context, email, passwordHash, fullName string) (uuid.UUID, error)
+	DeleteUserSoft(ctx context.Context, userID uuid.UUID) error
 	DeleteUser(ctx context.Context, userID uuid.UUID) error
+}
+
+type UserUpdate interface {
 	UpdateUserEmail(ctx context.Context, userID uuid.UUID, email string) error
 	UpdateUserName(ctx context.Context, userID uuid.UUID, fullName string) error
 	UpdateUserPassword(ctx context.Context, userID uuid.UUID, newPasswordHash string) error
@@ -38,15 +35,25 @@ type UserGet interface {
 	GetListUsers(ctx context.Context, limit, offset int) (*[]models.User, error)
 }
 
+type UserService struct {
+	logger     *zap.Logger
+	userManage UserManage
+	userUpdate UserUpdate
+	userGet    UserGet
+	hasher     Argon2Manager
+}
+
 func NewUserService(
 	logger *zap.Logger,
 	userManage UserManage,
+	userUpdate UserUpdate,
 	userGet UserGet,
 	hasher Argon2Manager,
 ) *UserService {
 	return &UserService{
 		logger:     logger.With(zap.String("component", "sso_service")),
 		userManage: userManage,
+		userUpdate: userUpdate,
 		userGet:    userGet,
 		hasher:     hasher,
 	}
@@ -192,7 +199,7 @@ func (s *UserService) UpdateProfile(
 	s.logger.Info("getting user")
 
 	if fulName != "" {
-		if err := s.userManage.UpdateUserName(ctx, userID, fulName); err != nil {
+		if err := s.userUpdate.UpdateUserName(ctx, userID, fulName); err != nil {
 			if errors.Is(err, ssoerrors.ErrUserExists) {
 				s.logger.Warn("user not found", zap.Error(ssoerrors.ErrUserExists))
 
@@ -209,7 +216,7 @@ func (s *UserService) UpdateProfile(
 			s.logger.Warn("invalide email", zap.String("email", email), zap.Error(err))
 			return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInvalidEmail)
 		}
-		if err := s.userManage.UpdateUserEmail(ctx, userID, email); err != nil {
+		if err := s.userUpdate.UpdateUserEmail(ctx, userID, email); err != nil {
 			if errors.Is(err, ssoerrors.ErrUserExists) {
 				s.logger.Warn("user not found", zap.Error(ssoerrors.ErrUserExists))
 
@@ -234,7 +241,7 @@ func (s *UserService) UpdateProfile(
 			return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 		}
 
-		if err := s.userManage.UpdateUserPassword(ctx, userID, passwordHash); err != nil {
+		if err := s.userUpdate.UpdateUserPassword(ctx, userID, passwordHash); err != nil {
 			if errors.Is(err, ssoerrors.ErrUserExists) {
 				s.logger.Warn("user not found", zap.Error(ssoerrors.ErrUserExists))
 

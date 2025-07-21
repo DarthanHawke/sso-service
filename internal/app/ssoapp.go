@@ -31,11 +31,12 @@ func New(
 		panic(err)
 	}
 	roleDataBase := storage.NewRoleDataBase(dataBase)
+	permDataBase := storage.NewPermissionDataBase(dataBase)
 	sessionDataBase := storage.NewSessionDataBase(dataBase)
 	userDataBase := storage.NewUserDataBase(dataBase)
-	roleService := role.NewRoleService(logger, roleDataBase, roleDataBase)
+	roleService := role.NewRoleService(logger, roleDataBase, roleDataBase, permDataBase, permDataBase)
 	sessionService := session.NewSessionService(logger, sessionDataBase, sessionDataBase, jwtManager, hasher)
-	userService := user.NewUserService(logger, userDataBase, userDataBase, hasher)
+	userService := user.NewUserService(logger, userDataBase, userDataBase, userDataBase, hasher)
 
 	_ = dataBase
 	gRPCApp := grpcapp.New(logger, grpcPort, tlsConfig, roleService, sessionService, userService)

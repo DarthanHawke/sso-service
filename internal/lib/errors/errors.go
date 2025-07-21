@@ -29,4 +29,12 @@ var (
 	ErrRoleNotFound    = errors.New("role not found")
 	ErrRoleName        = errors.New("role name cannot be empty")
 	ErrRoleNotAssigned = errors.New("role is not assigned to the user")
+	ErrRoleHasUsers    = errors.New("role has user")
+)
+
+var (
+	ErrPermissionExists   = errors.New("permission already exists")
+	ErrPermissionNotFound = errors.New("permission not found")
+	ErrPermissionName     = errors.New("permission name cannot be empty")
+	ErrPermissionHasRoles = errors.New("permission has user")
 )

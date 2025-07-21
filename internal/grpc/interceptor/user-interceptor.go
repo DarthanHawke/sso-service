@@ -2,38 +2,30 @@ package interceptor
 
 import (
 	"context"
-	"strings"
+	"sso-service/internal/models"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/peer"
 )
 
-type contextKey string
-
-const (
-	IPKey        contextKey = "ip"
-	UserAgentKey contextKey = "user_agent"
-)
-
-func IPUserAgentInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-	// Получаем IP из peer
+func IPUserAgentInterceptor(
+	ctx context.Context,
+	req any,
+	info *grpc.UnaryServerInfo,
+	handler grpc.UnaryHandler,
+) (any, error) {
 	var ip string
-	if p, ok := peer.FromContext(ctx); ok {
-		ip = p.Addr.String()
-	}
-
-	// Получаем User-Agent из метаданных
 	var userAgent string
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		if ua := md.Get("user-agent"); len(ua) > 0 {
-			userAgent = strings.Join(ua, ", ")
-		}
+		userInfo := md.Get("user-agent")
+		ip = userInfo[0]
+		userAgent = userInfo[1]
+
 	}
 
 	// Добавляем в контекст
-	newCtx := context.WithValue(ctx, IPKey, ip)
-	newCtx = context.WithValue(newCtx, UserAgentKey, userAgent)
+	newCtx := context.WithValue(ctx, models.IPKey, ip)
+	newCtx = context.WithValue(newCtx, models.UserAgentKey, userAgent)
 
 	return handler(newCtx, req)
 }

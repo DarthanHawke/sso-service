@@ -20,3 +20,10 @@ type UserSession struct {
 	AcssesToken  string `json:"AcssesToken"`
 	RefreshToken string `json:"RefreshToken"`
 }
+
+type contextKey string
+
+const (
+	IPKey        contextKey = "user_ip"
+	UserAgentKey contextKey = "user_agent"
+)

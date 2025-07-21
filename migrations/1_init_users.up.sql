@@ -10,13 +10,3 @@ CREATE TABLE users (
     deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL
 
 );
-
--- Индекс для поиска по email
-CREATE INDEX idx_users_email ON users(email);
-
--- Таблица для хэшей сброса пароля
-CREATE TABLE password_reset_tokens (
-    token_hash VARCHAR(512) PRIMARY KEY,  -- SHA-256 токена
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    expires_at TIMESTAMP WITH TIME ZONE NOT NULL
-);

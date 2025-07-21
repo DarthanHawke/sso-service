@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 )
 
 type SessionDataBase struct {
@@ -27,44 +28,37 @@ func (sessionDB *SessionDataBase) CreateSession(
 	ctx context.Context,
 	userID uuid.UUID,
 	refreshToken string,
+	ip, userAgent string,
 	expiresAt time.Time,
 ) error {
 	const op = "storage.session.CreateSession"
+	return sessionDB.db.WithTransaction(ctx, func(tx *sqlx.Tx) error {
+		_, err := tx.ExecContext(ctx, `
+			INSERT INTO sessions (
+				id, 
+				user_id, 
+				refresh_token_hash, 
+				user_ip, 
+				user_agent, 
+				expires_at,
+				created_at
+			) VALUES (
+				gen_random_uuid(), 
+				$1, $2, $3, $4, $5, NOW()
+			)`,
+			userID,
+			refreshToken,
+			ip,
+			userAgent,
+			expiresAt,
+		)
 
-	ip, _ := ctx.Value("ip").(string)
+		if err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
 
-	userAgent, _ := ctx.Value("user_agent").(string)
-
-	stmt, err := sessionDB.db.Prepare(`
-        INSERT INTO sessions (
-            id, 
-            user_id, 
-            refresh_token_hash, 
-            user_ip, 
-            user_agent, 
-            expires_at,
-			created_at
-        ) VALUES (
-            gen_random_uuid(), 
-            $1, $2, $3, $4, $5, NOW()
-        )`)
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-
-	_, err = stmt.ExecContext(ctx,
-		userID,
-		refreshToken,
-		ip,        // Получаем IP из контекста
-		userAgent, // Получаем User-Agent из контекста
-		expiresAt,
-	)
-
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-
-	return nil
+		return nil
+	})
 }
 
 // GetSessionByToken возвращает сессию по refresh-токену
@@ -130,61 +124,46 @@ func (sessionDB *SessionDataBase) GetUserSessions(
 func (sessionDB *SessionDataBase) DeleteSession(ctx context.Context, sessionID uuid.UUID) error {
 	const op = "storage.session.DeleteSession"
 
-	result, err := sessionDB.db.ExecContext(ctx, `
-        DELETE FROM sessions 
-        WHERE id = $1`,
-		sessionID,
-	)
+	return sessionDB.db.WithTransaction(ctx, func(tx *sqlx.Tx) error {
+		result, err := tx.ExecContext(ctx, `
+			DELETE FROM sessions 
+			WHERE id = $1`,
+			sessionID,
+		)
 
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
+		if err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
 
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
 
-	if rowsAffected == 0 {
-		return fmt.Errorf("%s: %w", op, ssoerrors.ErrSessionNotFound)
-	}
+		if rowsAffected == 0 {
+			return fmt.Errorf("%s: %w", op, ssoerrors.ErrSessionNotFound)
+		}
 
-	return nil
+		return nil
+	})
 }
 
 // DeleteAllUserSessions удаляет все сессии пользователя
 func (sessionDB *SessionDataBase) DeleteAllUserSessions(ctx context.Context, userID uuid.UUID) error {
 	const op = "storage.session.DeleteAllUserSessions"
 
-	_, err := sessionDB.db.ExecContext(ctx, `
-        DELETE FROM sessions 
-        WHERE user_id = $1`,
-		userID,
-	)
+	return sessionDB.db.WithTransaction(ctx, func(tx *sqlx.Tx) error {
+		// Сначала удаляем все refresh токены пользователя
+		_, err := tx.ExecContext(ctx, `
+			DELETE FROM sessions 
+			WHERE user_id = $1`,
+			userID,
+		)
 
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
+		if err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
 
-	return nil
-}
-
-// IsSessionValid проверяет валидность сессии
-func (sessionDB *SessionDataBase) IsSessionValid(ctx context.Context, refreshToken string) (bool, error) {
-	const op = "storage.session.IsSessionValid"
-
-	var exists bool
-	err := sessionDB.db.GetContext(ctx, &exists, `
-        SELECT EXISTS (
-            SELECT 1 FROM sessions 
-            WHERE refresh_token_hash = $1 AND expires_at > NOW()
-        )`,
-		refreshToken,
-	)
-
-	if err != nil {
-		return false, fmt.Errorf("%s: %w", op, err)
-	}
-
-	return exists, nil
+		return nil
+	})
 }

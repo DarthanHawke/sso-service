@@ -12,11 +12,27 @@ import (
 )
 
 type Role interface {
-	CreateRole(ctx context.Context, name string, permissions []string) (*models.Role, error)
-	AssignRole(ctx context.Context, userID, roleID uuid.UUID) error
-	RevokeRole(ctx context.Context, userID, roleID uuid.UUID) error
-	CheckPermission(ctx context.Context, userID uuid.UUID, permission string) (bool, error)
+	CreateRole(ctx context.Context, name string, permissions []string, description string) (uuid.UUID, error)
+	DeleteRole(ctx context.Context, roleID uuid.UUID) error
+	GetRoleByID(ctx context.Context, roleID uuid.UUID) (*models.Role, error)
+	GetRoleByName(ctx context.Context, roleName string) (*models.Role, error)
+	ListRoles(ctx context.Context, limit, offset int) (*[]models.Role, error)
+	UpdateRole(ctx context.Context, roleID uuid.UUID, description string) error
+	AssignRoleToUser(ctx context.Context, userID, roleID uuid.UUID) error
+	RevokeRoleFromUser(ctx context.Context, userID, roleID uuid.UUID) error
+	GetUserRoles(ctx context.Context, userID uuid.UUID) (*[]models.Role, error)
+	CreatePermission(ctx context.Context, code, description string) (uuid.UUID, error)
+	DeletePermission(ctx context.Context, permID uuid.UUID) error
+	GetPermissionByID(ctx context.Context, permID uuid.UUID) (*models.Permission, error)
+	GetPermissionByCode(ctx context.Context, code string) (*models.Permission, error)
+	ListPermissions(ctx context.Context, limit, offset int) (*[]models.Permission, error)
+	UpdatePermission(ctx context.Context, permID uuid.UUID, description string) error
+	AddPermissionToRole(ctx context.Context, roleID, permID uuid.UUID) error
+	RevokePermissionFromRole(ctx context.Context, roleID, permID uuid.UUID) error
+	GetRolePermissions(ctx context.Context, roleID uuid.UUID) (*[]models.Permission, error)
+	HasRolePermission(ctx context.Context, roleID uuid.UUID, permission string) (bool, error)
 	GetUserPermissions(ctx context.Context, userID uuid.UUID) ([]string, error)
+	HasUserPermission(ctx context.Context, userID uuid.UUID, permission string) (bool, error)
 }
 
 type RoleServerAPI struct {
@@ -63,7 +79,7 @@ func (s *RoleServerAPI) AssignRole(
 		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
 	}
 
-	err = s.role.AssignRole(ctx, userID, roleID)
+	err = s.role.AssignRoleToUser(ctx, userID, roleID)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to assign role")
 	}
@@ -85,7 +101,7 @@ func (s *RoleServerAPI) RevokeRole(
 		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
 	}
 
-	err = s.role.RevokeRole(ctx, userID, roleID)
+	err = s.role.RevokeRoleFromUser(ctx, userID, roleID)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to revoke role")
 	}
@@ -106,7 +122,7 @@ func (s *RoleServerAPI) CheckPermission(
 		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
 	}
 
-	permission, err := s.role.CheckPermission(ctx, userID, req.GetPermission())
+	permission, err := s.role.HasUserPermission(ctx, userID, req.GetPermission())
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to logout")
 	}

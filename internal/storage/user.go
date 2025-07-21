@@ -9,6 +9,7 @@ import (
 	"sso-service/internal/models"
 
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 
 	"github.com/lib/pq"
 )
@@ -28,28 +29,32 @@ func NewUserDataBase(db *Database) *UserDataBase {
 func (userDB *UserDataBase) CreateUser(ctx context.Context, email, passwordHash, fullName string) (uuid.UUID, error) {
 	const op = "storage.user.CreateUser"
 
-	stmt, err := userDB.db.Prepare(`
-		INSERT INTO users
-				(email, password_hash, full_name, created_at, updated_at) 
-			VALUES
-				($1, $2, $3, NOW(), NOW()) 
-			RETURNING id
-	`)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("%s: %w", op, err)
-	}
-
-	row := stmt.QueryRowContext(ctx, email, passwordHash, fullName)
 	var id uuid.UUID
-	err = row.Scan(&id)
-	if err != nil {
-		var pqErr *pq.Error
-		if errors.As(err, &pqErr) && pqErr.Code == "23505" { // 23505 = unique_violation
-			return uuid.Nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrUserExists)
+
+	err := userDB.db.WithTransaction(ctx, func(tx *sqlx.Tx) error {
+		err := tx.QueryRowxContext(ctx, `
+            INSERT INTO users
+                (email, password_hash, full_name, created_at, updated_at) 
+            VALUES
+                ($1, $2, $3, NOW(), NOW()) 
+            RETURNING id`,
+			email, passwordHash, fullName,
+		).Scan(&id)
+
+		if err != nil {
+			if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" {
+				return fmt.Errorf("%s: %w", op, ssoerrors.ErrUserExists)
+			}
+			return fmt.Errorf("%s: %w", op, err)
 		}
 
-		return uuid.Nil, fmt.Errorf("%s: %w", op, err)
+		return nil
+	})
+
+	if err != nil {
+		return uuid.Nil, err
 	}
+
 	return id, nil
 }
 
@@ -151,105 +156,149 @@ func (userDB *UserDataBase) GetListUsers(ctx context.Context, limit, offset int)
 func (userDB *UserDataBase) UpdateUserEmail(ctx context.Context, userID uuid.UUID, email string) error {
 	const op = "storage.user.UpdateUserEmail"
 
-	stmt, err := userDB.db.Prepare("UPDATE users SET email = $1, updated_at = NOW() WHERE id = $2")
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
+	return userDB.db.WithTransaction(ctx, func(tx *sqlx.Tx) error {
+		result, err := tx.ExecContext(ctx, `
+            UPDATE users 
+            SET email = $1, updated_at = NOW() 
+            WHERE id = $2 AND deleted_at IS NULL`,
+			email, userID,
+		)
 
-	result, err := stmt.ExecContext(ctx, email, userID)
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
+		if err != nil {
+			if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" {
+				return fmt.Errorf("%s: %w", op, ssoerrors.ErrUserExists)
+			}
+			return fmt.Errorf("%s: %w", op, err)
+		}
 
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	if rowsAffected == 0 {
-		return ssoerrors.ErrNotFound
-	}
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
 
-	return nil
+		if rowsAffected == 0 {
+			return fmt.Errorf("%s: %w", op, ssoerrors.ErrUserNotFound)
+		}
+
+		return nil
+	})
 }
 
 // UpdateUser обновляет email и/или fullName пользователя models.User, используя userID
 func (userDB *UserDataBase) UpdateUserName(ctx context.Context, userID uuid.UUID, fullName string) error {
 	const op = "storage.user.UpdateUserName"
 
-	stmt, err := userDB.db.Prepare("UPDATE users SET full_name = $1, updated_at = NOW() WHERE id = $2")
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
+	return userDB.db.WithTransaction(ctx, func(tx *sqlx.Tx) error {
+		result, err := tx.ExecContext(ctx, `
+            UPDATE users 
+            SET full_name = $1, updated_at = NOW() 
+            WHERE id = $2 AND deleted_at IS NULL`,
+			fullName, userID,
+		)
 
-	result, err := stmt.ExecContext(ctx, fullName, userID)
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
+		if err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
 
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	if rowsAffected == 0 {
-		return ssoerrors.ErrNotFound
-	}
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
 
-	return nil
+		if rowsAffected == 0 {
+			return fmt.Errorf("%s: %w", op, ssoerrors.ErrUserNotFound)
+		}
+
+		return nil
+	})
 }
 
 // UpdateUser обновляет email и/или fullName пользователя models.User, используя userID
 func (userDB *UserDataBase) UpdateUserPassword(ctx context.Context, userID uuid.UUID, newPasswordHash string) error {
 	const op = "storage.user.UpdateUserPassword"
 
-	stmt, err := userDB.db.Prepare("UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2")
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
+	return userDB.db.WithTransaction(ctx, func(tx *sqlx.Tx) error {
+		result, err := tx.ExecContext(ctx, `
+            UPDATE users 
+            SET password_hash = $1, updated_at = NOW() 
+            WHERE id = $2 AND deleted_at IS NULL`,
+			newPasswordHash, userID,
+		)
 
-	result, err := stmt.ExecContext(ctx, newPasswordHash, userID)
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
+		if err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
 
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	if rowsAffected == 0 {
-		return ssoerrors.ErrNotFound
-	}
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
 
-	return nil
+		if rowsAffected == 0 {
+			return fmt.Errorf("%s: %w", op, ssoerrors.ErrUserNotFound)
+		}
+
+		return nil
+	})
 }
 
-// DeleteUser "мягкое" удаление пользователя по userID
+// DeleteUserSoft "мягкое" удаление пользователя по userID
+func (userDB *UserDataBase) DeleteUserSoft(ctx context.Context, userID uuid.UUID) error {
+	const op = "storage.user.DeleteUserSoft"
+
+	return userDB.db.WithTransaction(ctx, func(tx *sqlx.Tx) error {
+		// Удаляем сессии пользователя
+		if _, err := tx.ExecContext(ctx, "DELETE FROM sessions WHERE user_id = $1", userID); err != nil {
+			return fmt.Errorf("%s: failed to delete sessions: %w", op, err)
+		}
+
+		// Удаляем связи с ролями
+		if _, err := tx.ExecContext(ctx, "DELETE FROM user_roles WHERE user_id = $1", userID); err != nil {
+			return fmt.Errorf("%s: failed to delete user roles: %w", op, err)
+		}
+
+		// "Мягкое" удаление пользователя (устанавливаем deleted_at)
+		result, err := tx.ExecContext(ctx,
+			"UPDATE users SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL",
+			userID,
+		)
+		if err != nil {
+			return fmt.Errorf("%s: failed to soft delete user: %w", op, err)
+		}
+
+		// Проверяем, что пользователь действительно был обновлен
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("%s: failed to get affected rows: %w", op, err)
+		}
+
+		if rowsAffected == 0 {
+			return fmt.Errorf("%s: %w", op, ssoerrors.ErrUserNotFound)
+		}
+
+		return nil
+	})
+}
+
+// DeleteUser удаляет пользователя (с каскадным удалением связанных данных)
 func (userDB *UserDataBase) DeleteUser(ctx context.Context, userID uuid.UUID) error {
-	const op = "storage.user.DeleteUser"
+	const op = "storage.role.DeleteUser"
 
-	// Используем транзакцию, так как нужно удалить связанные данные
-	tx, err := userDB.db.BeginTxx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	defer tx.Rollback()
+	return userDB.db.WithTransaction(ctx, func(tx *sqlx.Tx) error {
+		result, err := tx.ExecContext(ctx, "DELETE FROM users WHERE id = $1", userID)
+		if err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
 
-	// Удаляем сессии пользователя
-	if _, err := tx.ExecContext(ctx, "DELETE FROM sessions WHERE user_id = $1", userID); err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
 
-	// Удаляем связи с ролями
-	if _, err := tx.ExecContext(ctx, "DELETE FROM user_roles WHERE user_id = $1", userID); err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
+		if rowsAffected == 0 {
+			return fmt.Errorf("%s: %w", op, ssoerrors.ErrUserNotFound)
+		}
 
-	// "Мягкое" удаление пользователя (помечаем deleted_at)
-	if _, err := tx.ExecContext(ctx,
-		"UPDATE users SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL",
-		userID,
-	); err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-
-	return tx.Commit()
+		return nil
+	})
 }
