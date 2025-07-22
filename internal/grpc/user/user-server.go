@@ -18,7 +18,9 @@ type User interface {
 	Register(ctx context.Context, fullName, email, password string) (uuid.UUID, error)
 	Login(ctx context.Context, email, password string) (uuid.UUID, error)
 	GetProfile(ctx context.Context, userID uuid.UUID) (*models.User, error)
-	UpdateProfile(ctx context.Context, userID uuid.UUID, fulName, email, password string) (*models.User, error)
+	UpdateUserName(ctx context.Context, userID uuid.UUID, fulName string) error
+	UpdateUserEmail(ctx context.Context, userID uuid.UUID, email string) error
+	UpdateUserPassword(ctx context.Context, userID uuid.UUID, password string) error
 }
 
 type UserServerAPI struct {
@@ -84,9 +86,9 @@ func (s *UserServerAPI) GetProfile(ctx context.Context, req *ssogrpc.GetProfileR
 	return &ssogrpc.GetProfileResponse{User: convertUserToProto(userProfile)}, nil
 }
 
-func (s *UserServerAPI) UpdateProfile(ctx context.Context, req *ssogrpc.UpdateProfileRequest) (*ssogrpc.UpdateProfileResponse, error) {
-	if *req.Name == "" && *req.Email == "" && *req.Password == "" {
-		return nil, status.Error(codes.InvalidArgument, "incorrect data")
+func (s *UserServerAPI) UpdateUserName(ctx context.Context, req *ssogrpc.UpdateNameRequest) (*ssogrpc.UpdateNameResponse, error) {
+	if req.Name == "" {
+		return nil, status.Error(codes.InvalidArgument, "email is required")
 	}
 
 	userID, err := uuid.Parse(req.GetUserId())
@@ -94,12 +96,48 @@ func (s *UserServerAPI) UpdateProfile(ctx context.Context, req *ssogrpc.UpdatePr
 		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
 	}
 
-	userProfile, err := s.user.UpdateProfile(ctx, userID, req.GetName(), req.GetEmail(), *req.Password)
+	err = s.user.UpdateUserName(ctx, userID, req.GetName())
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to change user")
 	}
 
-	return &ssogrpc.UpdateProfileResponse{User: convertUserToProto(userProfile)}, nil
+	return &ssogrpc.UpdateNameResponse{}, nil
+}
+
+func (s *UserServerAPI) UpdateUserEmail(ctx context.Context, req *ssogrpc.UpdateEmailRequest) (*ssogrpc.UpdateEmailResponse, error) {
+	if req.Email == "" {
+		return nil, status.Error(codes.InvalidArgument, "email is required")
+	}
+
+	userID, err := uuid.Parse(req.GetUserId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
+	}
+
+	err = s.user.UpdateUserEmail(ctx, userID, req.GetEmail())
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to change user")
+	}
+
+	return &ssogrpc.UpdateEmailResponse{}, nil
+}
+
+func (s *UserServerAPI) UpdateUserPassword(ctx context.Context, req *ssogrpc.UpdatePasswordRequest) (*ssogrpc.UpdatePasswordResponse, error) {
+	if req.Password == "" {
+		return nil, status.Error(codes.InvalidArgument, "password is required")
+	}
+
+	userID, err := uuid.Parse(req.GetUserId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
+	}
+
+	err = s.user.UpdateUserPassword(ctx, userID, req.GetPassword())
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to change user")
+	}
+
+	return &ssogrpc.UpdatePasswordResponse{}, nil
 }
 
 func convertUserToProto(u *models.User) (user *ssogrpc.User) {

@@ -33,18 +33,18 @@ var (
 	nilBool = false
 )
 
-type RoleService struct {
+type PermissionService struct {
 	logger            *zap.Logger
 	permissionsManage PermissionsManage
 	permRoleManage    PermRoleManage
 }
 
-func NewRoleService(
+func NewPermissionService(
 	logger *zap.Logger,
 	permissionsManage PermissionsManage,
 	permRoleManage PermRoleManage,
-) *RoleService {
-	return &RoleService{
+) *PermissionService {
+	return &PermissionService{
 		logger:            logger.With(zap.String("component", "sso_service")),
 		permissionsManage: permissionsManage,
 		permRoleManage:    permRoleManage,
@@ -52,7 +52,7 @@ func NewRoleService(
 }
 
 // CreatePermission создает новое разрешение
-func (s *RoleService) CreatePermission(
+func (s *PermissionService) CreatePermission(
 	ctx context.Context,
 	code, description string,
 ) (uuid.UUID, error) {
@@ -95,7 +95,7 @@ func (s *RoleService) CreatePermission(
 }
 
 // DeletePermission удаляет разрешение
-func (s *RoleService) DeletePermission(
+func (s *PermissionService) DeletePermission(
 	ctx context.Context,
 	permID uuid.UUID,
 ) error {
@@ -141,7 +141,7 @@ func (s *RoleService) DeletePermission(
 }
 
 // GetPermissionByID возвращает разрешение(models.Permission) по ID
-func (s *RoleService) GetPermissionByID(
+func (s *PermissionService) GetPermissionByID(
 	ctx context.Context,
 	permID uuid.UUID,
 ) (*models.Permission, error) {
@@ -179,7 +179,7 @@ func (s *RoleService) GetPermissionByID(
 }
 
 // GetPermissionByID возвращает разрешение(models.Permission) по code
-func (s *RoleService) GetPermissionByCode(
+func (s *PermissionService) GetPermissionByCode(
 	ctx context.Context,
 	code string,
 ) (*models.Permission, error) {
@@ -217,7 +217,7 @@ func (s *RoleService) GetPermissionByCode(
 }
 
 // ListPermissions все существующие разрешения
-func (s *RoleService) ListPermissions(
+func (s *PermissionService) ListPermissions(
 	ctx context.Context,
 	limit, offset int,
 ) (*[]models.Permission, error) {
@@ -241,7 +241,7 @@ func (s *RoleService) ListPermissions(
 }
 
 // UpdatePermission обновляет роль
-func (s *RoleService) UpdatePermission(
+func (s *PermissionService) UpdatePermission(
 	ctx context.Context,
 	permID uuid.UUID,
 	description string,
@@ -272,7 +272,7 @@ func (s *RoleService) UpdatePermission(
 }
 
 // AddPermissionToRole назначает разрешение роли
-func (s *RoleService) AddPermissionToRole(
+func (s *PermissionService) AddPermissionToRole(
 	ctx context.Context,
 	roleID, permID uuid.UUID,
 ) error {
@@ -316,7 +316,7 @@ func (s *RoleService) AddPermissionToRole(
 }
 
 // RevokePermissionFromRole отзывает разрешение у роли
-func (s *RoleService) RevokePermissionFromRole(
+func (s *PermissionService) RevokePermissionFromRole(
 	ctx context.Context,
 	roleID, permID uuid.UUID,
 ) error {
@@ -347,7 +347,7 @@ func (s *RoleService) RevokePermissionFromRole(
 }
 
 // GetRolePermissions возвращает все разрешения роли
-func (s *RoleService) GetRolePermissions(
+func (s *PermissionService) GetRolePermissions(
 	ctx context.Context,
 	roleID uuid.UUID,
 ) (*[]models.Permission, error) {
@@ -376,7 +376,7 @@ func (s *RoleService) GetRolePermissions(
 }
 
 // HasRolePermission проверяет право у роли
-func (s *RoleService) HasRolePermission(
+func (s *PermissionService) HasRolePermission(
 	ctx context.Context,
 	roleID uuid.UUID, permission string,
 ) (bool, error) {
@@ -408,7 +408,7 @@ func (s *RoleService) HasRolePermission(
 }
 
 // GetUserPermissions возвращает все права пользователя
-func (s *RoleService) GetUserPermissions(
+func (s *PermissionService) GetUserPermissions(
 	ctx context.Context,
 	userID uuid.UUID,
 ) (*[]models.Permission, error) {
@@ -437,7 +437,7 @@ func (s *RoleService) GetUserPermissions(
 }
 
 // HasUserPermission проверяет право пользователя
-func (s *RoleService) HasUserPermission(
+func (s *PermissionService) HasUserPermission(
 	ctx context.Context,
 	userID uuid.UUID, permission string,
 ) (bool, error) {
