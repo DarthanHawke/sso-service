@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -33,7 +34,7 @@ func (s *SessionServerAPI) CreateSession(
 	ctx context.Context,
 	req *ssogrpc.CreateSessionRequest,
 ) (*ssogrpc.CreateSessionResponse, error) {
-	userID, err := uuid.Parse(req.GetUserId())
+	userID, err := uuid.Parse(req.GetUserId().GetValue())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
 	}
@@ -56,7 +57,7 @@ func (s *SessionServerAPI) RefreshSession(
 		return nil, status.Error(codes.InvalidArgument, "invalid token")
 	}
 
-	userID, err := uuid.Parse(req.GetUserId())
+	userID, err := uuid.Parse(req.UserId.Value)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
 	}
@@ -75,13 +76,13 @@ func (s *SessionServerAPI) RefreshSession(
 func (s *SessionServerAPI) Logout(
 	ctx context.Context,
 	req *ssogrpc.LogoutRequest,
-) (*ssogrpc.LogoutResponse, error) {
-	userID, err := uuid.Parse(req.GetUserId())
+) (*emptypb.Empty, error) {
+	userID, err := uuid.Parse(req.GetUserId().GetValue())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
 	}
 
-	sessionID, err := uuid.Parse(req.GetSessionId())
+	sessionID, err := uuid.Parse(req.GetSessionId().GetValue())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
 	}
@@ -91,14 +92,14 @@ func (s *SessionServerAPI) Logout(
 		return nil, status.Error(codes.Internal, "failed to logout")
 	}
 
-	return &ssogrpc.LogoutResponse{}, nil
+	return nil, nil
 }
 
 func (s *SessionServerAPI) LogoutAll(
 	ctx context.Context,
 	req *ssogrpc.LogoutAllRequest,
-) (*ssogrpc.LogoutAllResponse, error) {
-	userID, err := uuid.Parse(req.GetUserId())
+) (*emptypb.Empty, error) {
+	userID, err := uuid.Parse(req.GetUserId().GetValue())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
 	}
@@ -108,14 +109,14 @@ func (s *SessionServerAPI) LogoutAll(
 		return nil, status.Error(codes.Internal, "failed to logout")
 	}
 
-	return &ssogrpc.LogoutAllResponse{}, nil
+	return nil, nil
 }
 
 func (s *SessionServerAPI) GetAll(
 	ctx context.Context,
 	req *ssogrpc.GetAllRequest,
 ) (*ssogrpc.GetAllResponse, error) {
-	userID, err := uuid.Parse(req.GetUserId())
+	userID, err := uuid.Parse(req.GetUserId().GetValue())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
 	}
@@ -147,8 +148,8 @@ func convertSessionToProto(s *models.Session) *ssogrpc.Session {
 	}
 
 	return &ssogrpc.Session{
-		Id:        s.ID.String(),
-		UserId:    s.UserID.String(),
+		Id:        &ssogrpc.UUID{Value: s.ID.String()},
+		UserId:    &ssogrpc.UUID{Value: s.UserID.String()},
 		ExpiresAt: timestamppb.New(s.ExpiresAt),
 	}
 }

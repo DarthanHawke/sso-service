@@ -2,7 +2,6 @@ package role
 
 import (
 	"context"
-	"slices"
 	"sso-service/internal/models"
 
 	ssogrpc "github.com/DarthanHawke/protos-payment-system/gen/go/sso"
@@ -10,22 +9,22 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-)
-
-const (
-	nilStr = ""
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type Role interface {
-	CreateRole(ctx context.Context, name string, permissions []string, description string) (uuid.UUID, error)
-	DeleteRole(ctx context.Context, roleID uuid.UUID) error
-	GetRoleByID(ctx context.Context, roleID uuid.UUID) (*models.Role, error)
-	GetRoleByName(ctx context.Context, roleName string) (*models.Role, error)
-	ListRoles(ctx context.Context, limit, offset int) (*[]models.Role, error)
-	UpdateRole(ctx context.Context, roleID uuid.UUID, description string) error
-	AssignRoleToUser(ctx context.Context, userID, roleID uuid.UUID) error
-	RevokeRoleFromUser(ctx context.Context, userID, roleID uuid.UUID) error
-	GetUserRoles(ctx context.Context, userID uuid.UUID) (*[]models.Role, error)
+	CreateEntity(ctx context.Context, id uuid.UUID, entityType string) error
+	DeleteEntity(ctx context.Context, id uuid.UUID) error
+	CreateRelation(ctx context.Context, sourceID, targetID uuid.UUID, relationType string) error
+	DeleteRelation(ctx context.Context, sourceID, targetID uuid.UUID, relationType string) error
+	AddPermission(ctx context.Context, name, description string) (uuid.UUID, error)
+	AssignPermission(ctx context.Context, permissionID uuid.UUID, relationType string) error
+	CheckPermission(ctx context.Context, subjectID, objectID, permissionID uuid.UUID) (bool, error)
+	GetAllPermissions(ctx context.Context) (*[]models.Permission, error)
+	GetUserRelations(ctx context.Context, userID uuid.UUID) (*[]models.Relation, error)
+	GetUserPermissions(ctx context.Context, userID uuid.UUID) (*[]models.Permission, error)
+	GetPermissionsForRelationType(ctx context.Context, relationType string) (*[]models.Permission, error)
+	GetEntityRelations(ctx context.Context, entityID uuid.UUID) (*[]models.Relation, error)
 }
 
 type RoleServerAPI struct {
@@ -37,181 +36,292 @@ func NewRoleServer(gRPC *grpc.Server, role Role) {
 	ssogrpc.RegisterRoleServiceServer(gRPC, &RoleServerAPI{role: role})
 }
 
-func (s *RoleServerAPI) CreateRole(
+func (s *RoleServerAPI) CreateEntity(
 	ctx context.Context,
-	req *ssogrpc.CreateRoleRequest,
-) (*ssogrpc.CreateRoleResponse, error) {
-	if req.Name == nilStr {
-		return nil, status.Error(codes.InvalidArgument, "invalid name role")
-	}
-
-	if slices.Contains(req.Permissions, nilStr) {
-		return nil, status.Error(codes.InvalidArgument, "invalid role")
-	}
-
-	roleId, err := s.role.CreateRole(ctx, req.GetName(), req.GetPermissions(), req.GetDescription())
-	if err != nil {
-		return nil, status.Error(codes.Internal, "failed to create role")
-	}
-	return &ssogrpc.CreateRoleResponse{RoleId: roleId.String()}, nil
-}
-
-func (s *RoleServerAPI) DeleteRole(
-	ctx context.Context,
-	req *ssogrpc.DeleteRoleRequest,
-) (*ssogrpc.DeleteRoleResponse, error) {
-	roleID, err := uuid.Parse(req.GetRoleId())
+	req *ssogrpc.CreateEntityRequest,
+) (*emptypb.Empty, error) {
+	id, err := uuid.Parse(req.GetId().GetValue())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
 	}
 
-	err = s.role.DeleteRole(ctx, roleID)
-	if err != nil {
-		return nil, status.Error(codes.Internal, "failed to delete role")
+	if req.GetEntityType() == "" {
+		return nil, status.Error(codes.InvalidArgument, "entity type is required")
 	}
-	return &ssogrpc.DeleteRoleResponse{}, nil
+
+	err = s.role.CreateEntity(ctx, id, req.GetEntityType())
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to create entity")
+	}
+	return &emptypb.Empty{}, nil
 }
 
-func (s *RoleServerAPI) GetRoleByID(
+func (s *RoleServerAPI) DeleteEntity(
 	ctx context.Context,
-	req *ssogrpc.GetRoleByIDRequest,
-) (*ssogrpc.GetRoleByIDResponse, error) {
-	roleID, err := uuid.Parse(req.GetRoleId())
+	req *ssogrpc.DeleteEntityRequest,
+) (*emptypb.Empty, error) {
+	id, err := uuid.Parse(req.GetId().GetValue())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
 	}
 
-	role, err := s.role.GetRoleByID(ctx, roleID)
+	err = s.role.DeleteEntity(ctx, id)
 	if err != nil {
-		return nil, status.Error(codes.Internal, "failed to get role")
+		return nil, status.Error(codes.Internal, "failed to delete entity")
 	}
-	return &ssogrpc.GetRoleByIDResponse{Role: convertRoleToProto(role)}, nil
+	return &emptypb.Empty{}, nil
 }
 
-func (s *RoleServerAPI) GetRoleByName(
+func (s *RoleServerAPI) CreateRelation(
 	ctx context.Context,
-	req *ssogrpc.GetRoleByNameRequest,
-) (*ssogrpc.GetRoleByNameResponse, error) {
-	if req.Name == nilStr {
-		return nil, status.Error(codes.InvalidArgument, "invalid name")
+	req *ssogrpc.CreateRelationRequest,
+) (*emptypb.Empty, error) {
+	sourceID, err := uuid.Parse(req.GetSourceId().GetValue())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid source UUID format: %v", err)
 	}
 
-	role, err := s.role.GetRoleByName(ctx, req.GetName())
+	targetID, err := uuid.Parse(req.GetTargetId().GetValue())
 	if err != nil {
-		return nil, status.Error(codes.Internal, "failed to get role")
+		return nil, status.Errorf(codes.InvalidArgument, "invalid target UUID format: %v", err)
 	}
-	return &ssogrpc.GetRoleByNameResponse{Role: convertRoleToProto(role)}, nil
+
+	if req.GetRelationType() == "" {
+		return nil, status.Error(codes.InvalidArgument, "relation type is required")
+	}
+
+	err = s.role.CreateRelation(ctx, sourceID, targetID, req.GetRelationType())
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to create relation")
+	}
+	return &emptypb.Empty{}, nil
 }
 
-func (s *RoleServerAPI) ListRoles(
+func (s *RoleServerAPI) DeleteRelation(
 	ctx context.Context,
-	req *ssogrpc.ListRolesRequest,
-) (*ssogrpc.ListRolesResponse, error) {
-	roles, err := s.role.ListRoles(ctx, int(req.GetLimit()), int(req.GetOffset()))
+	req *ssogrpc.DeleteRelationRequest,
+) (*emptypb.Empty, error) {
+	sourceID, err := uuid.Parse(req.GetSourceId().GetValue())
 	if err != nil {
-		return nil, status.Error(codes.Internal, "failed to get list roles")
+		return nil, status.Errorf(codes.InvalidArgument, "invalid source UUID format: %v", err)
 	}
-	return &ssogrpc.ListRolesResponse{Role: convertRolesToProto(roles)}, nil
+
+	targetID, err := uuid.Parse(req.GetTargetId().GetValue())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid target UUID format: %v", err)
+	}
+
+	if req.GetRelationType() == "" {
+		return nil, status.Error(codes.InvalidArgument, "relation type is required")
+	}
+
+	err = s.role.DeleteRelation(ctx, sourceID, targetID, req.GetRelationType())
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to delete relation")
+	}
+	return &emptypb.Empty{}, nil
 }
 
-func (s *RoleServerAPI) UpdateRole(
+func (s *RoleServerAPI) AddPermission(
 	ctx context.Context,
-	req *ssogrpc.UpdateRoleRequest,
-) (*ssogrpc.UpdateRoleResponse, error) {
-	roleID, err := uuid.Parse(req.GetRoleId())
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
+	req *ssogrpc.AddPermissionRequest,
+) (*ssogrpc.AddPermissionResponse, error) {
+	if req.GetName() == "" {
+		return nil, status.Error(codes.InvalidArgument, "permission name is required")
 	}
 
-	err = s.role.UpdateRole(ctx, roleID, req.GetDescription())
+	permissionID, err := s.role.AddPermission(ctx, req.GetName(), req.GetDescription())
 	if err != nil {
-		return nil, status.Error(codes.Internal, "failed to update role")
+		return nil, status.Error(codes.Internal, "failed to add permission")
 	}
-	return &ssogrpc.UpdateRoleResponse{}, nil
+
+	return &ssogrpc.AddPermissionResponse{
+		PermissionId: &ssogrpc.UUID{Value: permissionID.String()},
+	}, nil
 }
 
-func (s *RoleServerAPI) AssignRoleToUser(
+func (s *RoleServerAPI) AssignPermission(
 	ctx context.Context,
-	req *ssogrpc.AssignRoleToUserRequest,
-) (*ssogrpc.AssignRoleToUserResponse, error) {
+	req *ssogrpc.AssignPermissionRequest,
+) (*emptypb.Empty, error) {
+	permissionID, err := uuid.Parse(req.GetPermissionId().GetValue())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid permission UUID format: %v", err)
+	}
+
+	if req.GetRelationType() == "" {
+		return nil, status.Error(codes.InvalidArgument, "relation type is required")
+	}
+
+	err = s.role.AssignPermission(ctx, permissionID, req.GetRelationType())
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to assign permission")
+	}
+	return &emptypb.Empty{}, nil
+}
+
+func (s *RoleServerAPI) CheckPermission(
+	ctx context.Context,
+	req *ssogrpc.CheckPermissionRequest,
+) (*ssogrpc.CheckPermissionResponse, error) {
+	subjectID, err := uuid.Parse(req.GetSubjectId().GetValue())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid subject UUID format: %v", err)
+	}
+
+	objectID, err := uuid.Parse(req.GetObjectId().GetValue())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid object UUID format: %v", err)
+	}
+
+	permissionID, err := uuid.Parse(req.GetPermissionId().GetValue())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid permission UUID format: %v", err)
+	}
+
+	hasPermission, err := s.role.CheckPermission(ctx, subjectID, objectID, permissionID)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to check permission")
+	}
+
+	return &ssogrpc.CheckPermissionResponse{
+		HasPermission: hasPermission,
+	}, nil
+}
+
+func (s *RoleServerAPI) GetAllPermissions(
+	ctx context.Context,
+	_ *emptypb.Empty,
+) (*ssogrpc.GetAllPermissionsResponse, error) {
+	permissions, err := s.role.GetAllPermissions(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to get permissions")
+	}
+
+	return &ssogrpc.GetAllPermissionsResponse{
+		Permissions: convertPermissionsToProto(permissions),
+	}, nil
+}
+
+func (s *RoleServerAPI) GetUserRelations(
+	ctx context.Context,
+	req *ssogrpc.GetUserRelationsRequest,
+) (*ssogrpc.GetUserRelationsResponse, error) {
+	userID, err := uuid.Parse(req.GetUserId().GetValue())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid user UUID format: %v", err)
+	}
+
+	relations, err := s.role.GetUserRelations(ctx, userID)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to get user relations")
+	}
+
+	return &ssogrpc.GetUserRelationsResponse{
+		Relations: convertRelationsToProto(relations),
+	}, nil
+}
+
+func (s *RoleServerAPI) GetUserPermissions(
+	ctx context.Context,
+	req *ssogrpc.GetUserPermissionsRequest,
+) (*ssogrpc.GetUserPermissionsResponse, error) {
 	userID, err := uuid.Parse(req.GetUserId())
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
+		return nil, status.Errorf(codes.InvalidArgument, "invalid user UUID format: %v", err)
 	}
 
-	roleID, err := uuid.Parse(req.GetRoleId())
+	permissions, err := s.role.GetUserPermissions(ctx, userID)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
+		return nil, status.Error(codes.Internal, "failed to get user permissions")
 	}
 
-	err = s.role.AssignRoleToUser(ctx, userID, roleID)
-	if err != nil {
-		return nil, status.Error(codes.Internal, "failed to assign role")
-	}
-
-	return &ssogrpc.AssignRoleToUserResponse{}, nil
+	return &ssogrpc.GetUserPermissionsResponse{
+		Permission: convertPermissionsToProto(permissions),
+	}, nil
 }
 
-func (s *RoleServerAPI) RevokeRoleFromUser(
+func (s *RoleServerAPI) GetPermissionsForRelationType(
 	ctx context.Context,
-	req *ssogrpc.RevokeRoleFromUserRequest,
-) (*ssogrpc.RevokeRoleFromUserResponse, error) {
-	userID, err := uuid.Parse(req.GetUserId())
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
+	req *ssogrpc.GetPermissionsForRelationTypeRequest,
+) (*ssogrpc.GetPermissionsForRelationTypeResponse, error) {
+	if req.GetRelationType() == "" {
+		return nil, status.Error(codes.InvalidArgument, "relation type is required")
 	}
 
-	roleID, err := uuid.Parse(req.GetRoleId())
+	permissions, err := s.role.GetPermissionsForRelationType(ctx, req.GetRelationType())
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
+		return nil, status.Error(codes.Internal, "failed to get permissions for relation type")
 	}
 
-	err = s.role.RevokeRoleFromUser(ctx, userID, roleID)
-	if err != nil {
-		return nil, status.Error(codes.Internal, "failed to revoke role")
-	}
-
-	return &ssogrpc.RevokeRoleFromUserResponse{}, nil
+	return &ssogrpc.GetPermissionsForRelationTypeResponse{
+		Permissions: convertPermissionsToProto(permissions),
+	}, nil
 }
 
-func (s *RoleServerAPI) GetUserRoles(
+func (s *RoleServerAPI) GetEntityRelations(
 	ctx context.Context,
-	req *ssogrpc.GetUserRolesRequest,
-) (*ssogrpc.GetUserRolesResponse, error) {
-	userID, err := uuid.Parse(req.GetUserId())
+	req *ssogrpc.GetEntityRelationsRequest,
+) (*ssogrpc.GetEntityRelationsResponse, error) {
+	entityID, err := uuid.Parse(req.GetEntityId().GetValue())
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
+		return nil, status.Errorf(codes.InvalidArgument, "invalid entity UUID format: %v", err)
 	}
 
-	roles, err := s.role.GetUserRoles(ctx, userID)
+	relations, err := s.role.GetEntityRelations(ctx, entityID)
 	if err != nil {
-		return nil, status.Error(codes.Internal, "failed to logout")
+		return nil, status.Error(codes.Internal, "failed to get entity relations")
 	}
 
-	return &ssogrpc.GetUserRolesResponse{Role: convertRolesToProto(roles)}, nil
+	return &ssogrpc.GetEntityRelationsResponse{
+		Relations: convertRelationsToProto(relations),
+	}, nil
 }
 
-func convertRolesToProto(r *[]models.Role) []*ssogrpc.Role {
+func convertPermissionsToProto(p *[]models.Permission) []*ssogrpc.Permission {
+	if p == nil {
+		return nil
+	}
+
+	var permissions []*ssogrpc.Permission
+	for _, permission := range *p {
+		permissions = append(permissions, convertPermissionToProto(&permission))
+	}
+
+	return permissions
+}
+
+func convertPermissionToProto(p *models.Permission) *ssogrpc.Permission {
+	if p == nil {
+		return nil
+	}
+	return &ssogrpc.Permission{
+		Id:          &ssogrpc.UUID{Value: p.ID.String()},
+		Name:        p.Name,
+		Description: p.Description,
+	}
+}
+
+func convertRelationsToProto(r *[]models.Relation) []*ssogrpc.Relation {
 	if r == nil {
 		return nil
 	}
 
-	var roles []*ssogrpc.Role
-	for _, role := range *r {
-		roles = append(roles, convertRoleToProto(&role))
+	var relations []*ssogrpc.Relation
+	for _, relation := range *r {
+		relations = append(relations, convertRelationToProto(&relation))
 	}
 
-	return roles
+	return relations
 }
 
-func convertRoleToProto(r *models.Role) (role *ssogrpc.Role) {
+func convertRelationToProto(r *models.Relation) *ssogrpc.Relation {
 	if r == nil {
 		return nil
 	}
-	return &ssogrpc.Role{
-		Id:          r.ID.String(),
-		Name:        r.Name,
-		Permissions: r.Permissions,
-		Description: r.Description,
+	return &ssogrpc.Relation{
+		SourceId:     &ssogrpc.UUID{Value: r.SourceID.String()},
+		TargetId:     &ssogrpc.UUID{Value: r.TargetID.String()},
+		RelationType: r.RelationType,
 	}
 }

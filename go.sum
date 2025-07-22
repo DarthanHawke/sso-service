@@ -6,6 +6,10 @@ github.com/DarthanHawke/protos-payment-system v0.5.12 h1:+JYWeT1gMBTofY5BpYxyDOt
 github.com/DarthanHawke/protos-payment-system v0.5.12/go.mod h1:nF+bjLGPKfCwFczeGy4YvltbxAoFv17YefVHIsUAyd8=
 github.com/DarthanHawke/protos-payment-system v0.6.1 h1:FIZtePwmUdliFiqqkdYjhIPtBbwc30FhKSm9ABgfQDw=
 github.com/DarthanHawke/protos-payment-system v0.6.1/go.mod h1:nF+bjLGPKfCwFczeGy4YvltbxAoFv17YefVHIsUAyd8=
+github.com/DarthanHawke/protos-payment-system v0.6.2 h1:cKSQ+FMm7Pd4km80lxL3eSX26glIjhlxHrFnG35lflQ=
+github.com/DarthanHawke/protos-payment-system v0.6.2/go.mod h1:nF+bjLGPKfCwFczeGy4YvltbxAoFv17YefVHIsUAyd8=
+github.com/DarthanHawke/protos-payment-system v0.6.3 h1:dtDdhdg0SXzDRKJpEe+L8Q5ZlIIIFPWQloO2bFd9LU0=
+github.com/DarthanHawke/protos-payment-system v0.6.3/go.mod h1:nF+bjLGPKfCwFczeGy4YvltbxAoFv17YefVHIsUAyd8=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
@@ -160,6 +164,8 @@ google.golang.org/genproto/googleapis/rpc v0.0.0-20250324211829-b45e905df463 h1:
 google.golang.org/genproto/googleapis/rpc v0.0.0-20250324211829-b45e905df463/go.mod h1:qQ0YXyHHx3XkvlzUtpXDkS29lDSafHMZBAZDc03LQ3A=
 google.golang.org/genproto/googleapis/rpc v0.0.0-20250715232539-7130f93afb79 h1:1ZwqphdOdWYXsUHgMpU/101nCtf/kSp9hOrcvFsnl10=
 google.golang.org/genproto/googleapis/rpc v0.0.0-20250715232539-7130f93afb79/go.mod h1:qQ0YXyHHx3XkvlzUtpXDkS29lDSafHMZBAZDc03LQ3A=
+google.golang.org/genproto/googleapis/rpc v0.0.0-20250721164621-a45f3dfb1074 h1:qJW29YvkiJmXOYMu5Tf8lyrTp3dOS+K4z6IixtLaCf8=
+google.golang.org/genproto/googleapis/rpc v0.0.0-20250721164621-a45f3dfb1074/go.mod h1:qQ0YXyHHx3XkvlzUtpXDkS29lDSafHMZBAZDc03LQ3A=
 google.golang.org/grpc v1.73.0 h1:VIWSmpI2MegBtTuFt5/JWy2oXxtjJ/e89Z70ImfD2ok=
 google.golang.org/grpc v1.73.0/go.mod h1:50sbHOUqWoCQGI8V2HQLJM0B+LMlIUjNSZmow7EVBQc=
 google.golang.org/protobuf v1.36.6 h1:z1NpPI8ku2WgiWnf+t9wTPsn6eP1L7ksHUlkfLvd9xY=

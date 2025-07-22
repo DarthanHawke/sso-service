@@ -12,361 +12,464 @@ import (
 )
 
 type RoleManage interface {
-	CreateRole(ctx context.Context, name string, permissions []string, description string) (uuid.UUID, error)
-	DeleteRole(ctx context.Context, roleID uuid.UUID) error
-	GetRoleByID(ctx context.Context, roleID uuid.UUID) (*models.Role, error)
-	GetRoleByName(ctx context.Context, roleName string) (*models.Role, error)
-	ListRoles(ctx context.Context, limit, offset int) (*[]models.Role, error)
-	UpdateRole(ctx context.Context, roleID uuid.UUID, description string) error
+	CreateEntity(ctx context.Context, id uuid.UUID, entityType string) error
+	DeleteEntity(ctx context.Context, id uuid.UUID) error
+	CreateRelation(ctx context.Context, sourceID, targetID uuid.UUID, relationType string) error
+	DeleteRelation(ctx context.Context, sourceID, targetID uuid.UUID, relationType string) error
+	AddPermission(ctx context.Context, name, description string) (uuid.UUID, error)
+	AssignPermission(ctx context.Context, permissionID uuid.UUID, relationType string) error
 }
 
-type UserRoleManage interface {
-	AssignRoleToUser(ctx context.Context, userID, roleID uuid.UUID) error
-	RevokeRoleFromUser(ctx context.Context, userID, roleID uuid.UUID) error
-	GetUserRoles(ctx context.Context, userID uuid.UUID) (*[]models.Role, error)
+type RoleInfoManage interface {
+	CheckPermission(ctx context.Context, subjectID, objectID, permissionID uuid.UUID) (bool, error)
+	GetAllPermissions(ctx context.Context) (*[]models.Permission, error)
+	GetUserRelations(ctx context.Context, userID uuid.UUID) (*[]models.Relation, error)
+	GetUserPermissions(ctx context.Context, userID uuid.UUID) (*[]models.Permission, error)
+	GetPermissionsForRelationType(ctx context.Context, relationType string) (*[]models.Permission, error)
+	GetEntityRelations(ctx context.Context, entityID uuid.UUID) (*[]models.Relation, error)
 }
 
 type RoleService struct {
 	logger         *zap.Logger
 	roleManage     RoleManage
-	userRoleManage UserRoleManage
+	roleInfoManage RoleInfoManage
 }
 
 func NewRoleService(
 	logger *zap.Logger,
 	roleManage RoleManage,
-	userRoleManage UserRoleManage,
+	roleInfoManage RoleInfoManage,
 ) *RoleService {
 	return &RoleService{
 		logger:         logger.With(zap.String("component", "sso_service")),
 		roleManage:     roleManage,
-		userRoleManage: userRoleManage,
+		roleInfoManage: roleInfoManage,
 	}
 }
 
-// CreateRole создает новую роль
-func (s *RoleService) CreateRole(
+// CreateEntity создает новую сущность (роль/пользователя/группу)
+func (s *RoleService) CreateEntity(
 	ctx context.Context,
-	name string,
-	permissions []string,
-	description string,
-) (uuid.UUID, error) {
-	const op = "service.role.CreateRole"
+	id uuid.UUID,
+	entityType string,
+) error {
+	const op = "service.role.CreateEntity"
 
 	s.logger.With(
 		zap.String("op", op),
-		zap.String("name role", name),
+		zap.String("entity_id", id.String()),
+		zap.String("entity_type", entityType),
 	)
 
-	s.logger.Info("creating new role")
+	s.logger.Info("creating new entity")
 
-	// Валидация
-	if name == "" {
-		s.logger.Warn("invalid name", zap.Error(ssoerrors.ErrRoleName))
-
-		return uuid.Nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleName)
+	// Создание сущности
+	err := s.roleManage.CreateEntity(ctx, id, entityType)
+	if err != nil {
+		if errors.Is(err, ssoerrors.ErrEntityExists) {
+			s.logger.Warn("entity exists",
+				zap.String("entity_id", id.String()),
+				zap.Error(ssoerrors.ErrEntityExists),
+			)
+			return fmt.Errorf("%s: %w", op, ssoerrors.ErrEntityExists)
+		}
+		s.logger.Error("creating entity",
+			zap.String("entity_id", id.String()),
+			zap.String("entity_type", entityType),
+			zap.Error(err),
+		)
+		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
-	// Создание роли
-	id, err := s.roleManage.CreateRole(ctx, name, permissions, description)
-	if err != nil {
-		if errors.Is(err, ssoerrors.ErrRoleExists) {
-			s.logger.Warn("role exists", zap.String("role name", name))
+	s.logger.Debug("Successfully created entity",
+		zap.String("entity_id", id.String()),
+		zap.String("entity_type", entityType),
+	)
+	return nil
+}
 
-			return uuid.Nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleExists)
+// DeleteEntity удаляет сущность
+func (s *RoleService) DeleteEntity(
+	ctx context.Context,
+	id uuid.UUID,
+) error {
+	const op = "service.role.DeleteEntity"
+
+	s.logger.With(
+		zap.String("op", op),
+		zap.String("entity_id", id.String()),
+	)
+
+	s.logger.Info("deleting entity")
+
+	err := s.roleManage.DeleteEntity(ctx, id)
+	if err != nil {
+		if errors.Is(err, ssoerrors.ErrEntityNotFound) {
+			s.logger.Warn("entity not found",
+				zap.String("entity_id", id.String()),
+				zap.Error(ssoerrors.ErrEntityNotFound),
+			)
+			return fmt.Errorf("%s: %w", op, ssoerrors.ErrEntityNotFound)
 		}
-		s.logger.Error("creating role",
-			zap.String("role name", name),
-			zap.Strings("role name", permissions),
+		s.logger.Error("deleting entity",
+			zap.String("entity_id", id.String()),
+			zap.Error(err),
+		)
+		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
+	}
+
+	s.logger.Debug("Successfully deleted entity",
+		zap.String("entity_id", id.String()),
+	)
+	return nil
+}
+
+// CreateRelation создает связь между сущностями
+func (s *RoleService) CreateRelation(
+	ctx context.Context,
+	sourceID, targetID uuid.UUID,
+	relationType string,
+) error {
+	const op = "service.role.CreateRelation"
+
+	s.logger.With(
+		zap.String("op", op),
+		zap.String("source_id", sourceID.String()),
+		zap.String("target_id", targetID.String()),
+		zap.String("relation_type", relationType),
+	)
+
+	s.logger.Info("creating relation")
+
+	err := s.roleManage.CreateRelation(ctx, sourceID, targetID, relationType)
+	if err != nil {
+		if errors.Is(err, ssoerrors.ErrRelationExists) {
+			s.logger.Warn("relation exists",
+				zap.String("source_id", sourceID.String()),
+				zap.String("target_id", targetID.String()),
+				zap.String("relation_type", relationType),
+				zap.Error(ssoerrors.ErrRelationExists),
+			)
+			return fmt.Errorf("%s: %w", op, ssoerrors.ErrRelationExists)
+		}
+		s.logger.Error("creating relation",
+			zap.String("source_id", sourceID.String()),
+			zap.String("target_id", targetID.String()),
+			zap.String("relation_type", relationType),
+			zap.Error(err),
+		)
+		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
+	}
+
+	s.logger.Debug("Successfully created relation",
+		zap.String("source_id", sourceID.String()),
+		zap.String("target_id", targetID.String()),
+		zap.String("relation_type", relationType),
+	)
+	return nil
+}
+
+// DeleteRelation удаляет связь между сущностями
+func (s *RoleService) DeleteRelation(
+	ctx context.Context,
+	sourceID, targetID uuid.UUID,
+	relationType string,
+) error {
+	const op = "service.role.DeleteRelation"
+
+	s.logger.With(
+		zap.String("op", op),
+		zap.String("source_id", sourceID.String()),
+		zap.String("target_id", targetID.String()),
+		zap.String("relation_type", relationType),
+	)
+
+	s.logger.Info("deleting relation")
+
+	err := s.roleManage.DeleteRelation(ctx, sourceID, targetID, relationType)
+	if err != nil {
+		if errors.Is(err, ssoerrors.ErrRelationNotFound) {
+			s.logger.Warn("relation not found",
+				zap.String("source_id", sourceID.String()),
+				zap.String("target_id", targetID.String()),
+				zap.String("relation_type", relationType),
+				zap.Error(ssoerrors.ErrRelationNotFound),
+			)
+			return fmt.Errorf("%s: %w", op, ssoerrors.ErrRelationNotFound)
+		}
+		s.logger.Error("deleting relation",
+			zap.String("source_id", sourceID.String()),
+			zap.String("target_id", targetID.String()),
+			zap.String("relation_type", relationType),
+			zap.Error(err),
+		)
+		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
+	}
+
+	s.logger.Debug("Successfully deleted relation",
+		zap.String("source_id", sourceID.String()),
+		zap.String("target_id", targetID.String()),
+		zap.String("relation_type", relationType),
+	)
+	return nil
+}
+
+// AddPermission добавляет новое разрешение в систему
+func (s *RoleService) AddPermission(
+	ctx context.Context,
+	name, description string,
+) (uuid.UUID, error) {
+	const op = "service.role.AddPermission"
+
+	s.logger.With(
+		zap.String("op", op),
+		zap.String("permission_name", name),
+	)
+
+	s.logger.Info("adding new permission")
+
+	id, err := s.roleManage.AddPermission(ctx, name, description)
+	if err != nil {
+		if errors.Is(err, ssoerrors.ErrPermissionExists) {
+			s.logger.Warn("permission exists",
+				zap.String("permission_name", name),
+				zap.Error(ssoerrors.ErrPermissionExists),
+			)
+			return uuid.Nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrPermissionExists)
+		}
+		s.logger.Error("adding permission",
+			zap.String("permission_name", name),
 			zap.Error(err),
 		)
 		return uuid.Nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
-	s.logger.Debug("Successfully created role",
-		zap.String("role_id", id.String()),
+	s.logger.Debug("Successfully added permission",
+		zap.String("permission_id", id.String()),
+		zap.String("permission_name", name),
 	)
 	return id, nil
 }
 
-// DeleteRole удаляет роль
-func (s *RoleService) DeleteRole(
+// AssignPermission назначает разрешение для типа связи
+func (s *RoleService) AssignPermission(
 	ctx context.Context,
-	roleID uuid.UUID,
+	permissionID uuid.UUID,
+	relationType string,
 ) error {
-	const op = "service.role.DeleteRole"
+	const op = "service.role.AssignPermission"
 
 	s.logger.With(
 		zap.String("op", op),
-		zap.String("role id", roleID.String()),
+		zap.String("permission_id", permissionID.String()),
+		zap.String("relation_type", relationType),
 	)
 
-	s.logger.Info("creating new role")
+	s.logger.Info("assigning permission to relation")
 
-	// Удаление роли
-	err := s.roleManage.DeleteRole(ctx, roleID)
+	err := s.roleManage.AssignPermission(ctx, permissionID, relationType)
 	if err != nil {
-		if errors.Is(err, ssoerrors.ErrRoleHasUsers) {
-			s.logger.Warn("role has user",
-				zap.String("role id", roleID.String()),
-				zap.Error(ssoerrors.ErrRoleHasUsers),
+		if errors.Is(err, ssoerrors.ErrPermissionNotFound) {
+			s.logger.Warn("permission not found",
+				zap.String("permission_id", permissionID.String()),
+				zap.Error(ssoerrors.ErrPermissionNotFound),
 			)
-
-			return fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleHasUsers)
+			return fmt.Errorf("%s: %w", op, ssoerrors.ErrPermissionNotFound)
 		}
-		if errors.Is(err, ssoerrors.ErrRoleNotFound) {
-			s.logger.Warn("role not found",
-				zap.String("role id", roleID.String()),
-				zap.Error(ssoerrors.ErrRoleNotFound),
-			)
 
-			return fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleNotFound)
-		}
-		s.logger.Error("deleting role",
-			zap.String("role id", roleID.String()),
+		s.logger.Error("assigning permission",
+			zap.String("permission_id", permissionID.String()),
+			zap.String("relation_type", relationType),
 			zap.Error(err),
 		)
 		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
-	s.logger.Debug("Successfully deleted role",
-		zap.String("role_id", roleID.String()),
+	s.logger.Debug("Successfully assigned permission to relation",
+		zap.String("permission_id", permissionID.String()),
+		zap.String("relation_type", relationType),
 	)
 	return nil
 }
 
-// GetRoleByID возвращает роль(models.Role) по ID
-func (s *RoleService) GetRoleByID(
+// CheckPermission проверяет наличие разрешения у субъекта для объекта
+func (s *RoleService) CheckPermission(
 	ctx context.Context,
-	roleID uuid.UUID,
-) (*models.Role, error) {
-	const op = "service.role.GetRoleByID"
+	subjectID, objectID, permissionID uuid.UUID,
+) (bool, error) {
+	const op = "service.role.CheckPermission"
 
 	s.logger.With(
 		zap.String("op", op),
-		zap.String("role id", roleID.String()),
+		zap.String("subject_id", subjectID.String()),
+		zap.String("object_id", objectID.String()),
+		zap.String("permission_id", permissionID.String()),
 	)
 
-	s.logger.Info("getting role")
+	s.logger.Info("checking permission")
 
-	// Получение роли
-	role, err := s.roleManage.GetRoleByID(ctx, roleID)
+	hasPermission, err := s.roleInfoManage.CheckPermission(ctx, subjectID, objectID, permissionID)
 	if err != nil {
-		if errors.Is(err, ssoerrors.ErrRoleNotFound) {
-			s.logger.Warn("role not found",
-				zap.String("role id", roleID.String()),
-				zap.Error(ssoerrors.ErrRoleNotFound),
-			)
+		s.logger.Error("checking permission",
+			zap.String("subject_id", subjectID.String()),
+			zap.String("object_id", objectID.String()),
+			zap.String("permission_id", permissionID.String()),
+			zap.Error(err),
+		)
+		return false, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
+	}
 
-			return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleNotFound)
-		}
-		s.logger.Error("getting role",
-			zap.String("role id", roleID.String()),
+	s.logger.Debug("Permission check result",
+		zap.String("subject_id", subjectID.String()),
+		zap.String("object_id", objectID.String()),
+		zap.String("permission_id", permissionID.String()),
+		zap.Bool("has_permission", hasPermission),
+	)
+	return hasPermission, nil
+}
+
+// GetAllPermissions возвращает все разрешения в системе
+func (s *RoleService) GetAllPermissions(
+	ctx context.Context,
+) (*[]models.Permission, error) {
+	const op = "service.role.GetAllPermissions"
+
+	s.logger.With(
+		zap.String("op", op),
+	)
+
+	s.logger.Info("getting all permissions")
+
+	permissions, err := s.roleInfoManage.GetAllPermissions(ctx)
+	if err != nil {
+		s.logger.Error("getting all permissions",
 			zap.Error(err),
 		)
 		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
-	s.logger.Debug("Successfully get role",
-		zap.String("role_id", roleID.String()),
+	s.logger.Debug("Successfully retrieved all permissions",
+		zap.Int("count", len(*permissions)),
 	)
-	return role, nil
+	return permissions, nil
 }
 
-// GetRoleByName возвращает роль(models.Role) по name
-func (s *RoleService) GetRoleByName(
-	ctx context.Context,
-	roleName string,
-) (*models.Role, error) {
-	const op = "service.role.GetRoleByName"
-
-	s.logger.With(
-		zap.String("op", op),
-		zap.String("role name", roleName),
-	)
-
-	s.logger.Info("getting role")
-
-	// Получение роли
-	role, err := s.roleManage.GetRoleByName(ctx, roleName)
-	if err != nil {
-		if errors.Is(err, ssoerrors.ErrRoleNotFound) {
-			s.logger.Warn("role not found",
-				zap.String("role name", roleName),
-				zap.Error(ssoerrors.ErrRoleNotFound),
-			)
-
-			return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleNotFound)
-		}
-		s.logger.Error("getting role",
-			zap.String("role name", roleName),
-			zap.Error(err),
-		)
-		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
-	}
-
-	s.logger.Debug("Successfully get role",
-		zap.String("role name", roleName),
-	)
-	return role, nil
-}
-
-// ListRoles все существующие роли
-func (s *RoleService) ListRoles(
-	ctx context.Context,
-	limit, offset int,
-) (*[]models.Role, error) {
-	const op = "service.role.ListRoles"
-
-	s.logger.With(
-		zap.String("op", op),
-	)
-
-	s.logger.Info("getting list roles")
-
-	// Получение роли
-	roles, err := s.roleManage.ListRoles(ctx, limit, offset)
-	if err != nil {
-		s.logger.Error("getting roles", zap.Error(err))
-		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
-	}
-
-	s.logger.Debug("Successfully get list roles")
-	return roles, nil
-}
-
-// UpdateRole обновляет роль
-func (s *RoleService) UpdateRole(
-	ctx context.Context,
-	roleID uuid.UUID,
-	description string,
-) error {
-	const op = "service.role.UpdateRole"
-
-	s.logger.With(
-		zap.String("op", op),
-		zap.String("role id", roleID.String()),
-	)
-
-	s.logger.Info("updating role")
-
-	// Создание роли
-	err := s.roleManage.UpdateRole(ctx, roleID, description)
-	if err != nil {
-		s.logger.Error("creating role",
-			zap.String("role id", roleID.String()),
-			zap.Error(err),
-		)
-		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
-	}
-
-	s.logger.Debug("Successfully update role",
-		zap.String("role id", roleID.String()),
-	)
-	return nil
-}
-
-// AssignRoleToUser назначает роль пользователю с проверками
-func (s *RoleService) AssignRoleToUser(
-	ctx context.Context,
-	userID, roleID uuid.UUID,
-) error {
-	const op = "service.role.AssignRoleToUser"
-
-	s.logger.With(
-		zap.String("op", op),
-	)
-
-	s.logger.Info("assigning role")
-
-	// Проверяем существование роли
-	_, err := s.roleManage.GetRoleByID(ctx, roleID)
-	if err != nil {
-		if errors.Is(err, ssoerrors.ErrRoleNotFound) {
-			s.logger.Warn("getting role", zap.String("role id", roleID.String()), zap.Error(err))
-
-			return ssoerrors.ErrRoleNotFound
-		}
-		s.logger.Warn("getting role", zap.String("role id", roleID.String()), zap.Error(err))
-
-		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
-	}
-
-	// Назначаем роль
-	err = s.userRoleManage.AssignRoleToUser(ctx, userID, roleID)
-	if err != nil {
-		s.logger.Error("assigning role",
-			zap.String("role id", roleID.String()),
-			zap.String("user id", userID.String()),
-			zap.Error(err),
-		)
-
-		return fmt.Errorf("%s: %w", op, err)
-	}
-
-	s.logger.Debug("Successfully assign role to user",
-		zap.String("role id", roleID.String()),
-		zap.String("user id", userID.String()),
-	)
-	return nil
-}
-
-// RevokeRoleFromUser отзывает роль у пользователя
-func (s *RoleService) RevokeRoleFromUser(
-	ctx context.Context,
-	userID, roleID uuid.UUID,
-) error {
-	const op = "service.role.RevokeRoleFromUser"
-
-	s.logger.With(
-		zap.String("op", op),
-	)
-
-	s.logger.Info("revoking role user")
-
-	err := s.userRoleManage.RevokeRoleFromUser(ctx, userID, roleID)
-	if err != nil {
-		s.logger.Error("revoking role",
-			zap.String("role id", roleID.String()),
-			zap.String("user id", userID.String()),
-			zap.Error(err),
-		)
-
-		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
-	}
-
-	s.logger.Debug("Successfully revoke role from user",
-		zap.String("role id", roleID.String()),
-		zap.String("user id", userID.String()),
-	)
-	return nil
-}
-
-// GetUserRoles возвращает все роли пользователя
-func (s *RoleService) GetUserRoles(
+// GetUserRelations возвращает все связи пользователя
+func (s *RoleService) GetUserRelations(
 	ctx context.Context,
 	userID uuid.UUID,
-) (*[]models.Role, error) {
-	const op = "service.role.GetUserRoles"
+) (*[]models.Relation, error) {
+	const op = "service.role.GetUserRelations"
 
 	s.logger.With(
 		zap.String("op", op),
+		zap.String("user_id", userID.String()),
 	)
 
-	s.logger.Info("getting user roles")
+	s.logger.Info("getting user relations")
 
-	roles, err := s.userRoleManage.GetUserRoles(ctx, userID)
+	relations, err := s.roleInfoManage.GetUserRelations(ctx, userID)
 	if err != nil {
-		s.logger.Warn("cant get",
-			zap.String("user id", userID.String()),
+		s.logger.Error("getting user relations",
+			zap.String("user_id", userID.String()),
 			zap.Error(err),
 		)
-
 		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
-	s.logger.Debug("Successfully getting user roles",
-		zap.String("user id", userID.String()),
+	s.logger.Debug("Successfully retrieved user relations",
+		zap.String("user_id", userID.String()),
+		zap.Int("count", len(*relations)),
 	)
-	return roles, nil
+	return relations, nil
+}
+
+// GetUserPermissions возвращает все разрешения пользователя
+func (s *RoleService) GetUserPermissions(
+	ctx context.Context,
+	userID uuid.UUID,
+) (*[]models.Permission, error) {
+	const op = "service.role.GetUserPermissions"
+
+	s.logger.With(
+		zap.String("op", op),
+		zap.String("user_id", userID.String()),
+	)
+
+	s.logger.Info("getting user permissions")
+
+	permissions, err := s.roleInfoManage.GetUserPermissions(ctx, userID)
+	if err != nil {
+		s.logger.Error("getting user permissions",
+			zap.String("user_id", userID.String()),
+			zap.Error(err),
+		)
+		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
+	}
+
+	s.logger.Debug("Successfully retrieved user permissions",
+		zap.String("user_id", userID.String()),
+		zap.Int("count", len(*permissions)),
+	)
+	return permissions, nil
+}
+
+// GetPermissionsForRelationType возвращает разрешения для типа связи
+func (s *RoleService) GetPermissionsForRelationType(
+	ctx context.Context,
+	relationType string,
+) (*[]models.Permission, error) {
+	const op = "service.role.GetPermissionsForRelationType"
+
+	s.logger.With(
+		zap.String("op", op),
+		zap.String("relation_type", relationType),
+	)
+
+	s.logger.Info("getting permissions for relation type")
+
+	permissions, err := s.roleInfoManage.GetPermissionsForRelationType(ctx, relationType)
+	if err != nil {
+		s.logger.Error("getting permissions for relation type",
+			zap.String("relation_type", relationType),
+			zap.Error(err),
+		)
+		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
+	}
+
+	s.logger.Debug("Successfully retrieved permissions for relation type",
+		zap.String("relation_type", relationType),
+		zap.Int("count", len(*permissions)),
+	)
+	return permissions, nil
+}
+
+// GetEntityRelations возвращает все связи сущности
+func (s *RoleService) GetEntityRelations(
+	ctx context.Context,
+	entityID uuid.UUID,
+) (*[]models.Relation, error) {
+	const op = "service.role.GetEntityRelations"
+
+	s.logger.With(
+		zap.String("op", op),
+		zap.String("entity_id", entityID.String()),
+	)
+
+	s.logger.Info("getting entity relations")
+
+	relations, err := s.roleInfoManage.GetEntityRelations(ctx, entityID)
+	if err != nil {
+		s.logger.Error("getting entity relations",
+			zap.String("entity_id", entityID.String()),
+			zap.Error(err),
+		)
+		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
+	}
+
+	s.logger.Debug("Successfully retrieved entity relations",
+		zap.String("entity_id", entityID.String()),
+		zap.Int("count", len(*relations)),
+	)
+	return relations, nil
 }

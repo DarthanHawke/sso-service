@@ -2,15 +2,12 @@ package storage
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	ssoerrors "sso-service/internal/lib/errors"
 	"sso-service/internal/models"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
-	"github.com/lib/pq"
 )
 
 type RoleDataBase struct {
@@ -24,40 +21,231 @@ func NewRoleDataBase(db *Database) *RoleDataBase {
 	}
 }
 
-// CreateRole создает новую роль с разрешениями и описанием
-func (roleDB *RoleDataBase) CreateRole(
+// CheckPermission проверяет, есть ли у субъекта доступ к объекту с данным разрешением
+func (roleDB *RoleDataBase) CheckPermission(
 	ctx context.Context,
-	name string,
-	permissions []string,
-	description string,
-) (uuid.UUID, error) {
-	const op = "storage.role.CreateRole"
+	subjectID, objectID, permissionID uuid.UUID,
+) (bool, error) {
+	found, err := roleDB.bfsCheck(ctx, subjectID, objectID, permissionID)
+	if err != nil {
+		return false, fmt.Errorf("bfs check failed: %w", err)
+	}
 
-	var roleID uuid.UUID
+	return found, nil
+}
 
-	err := roleDB.db.WithTransaction(ctx, func(tx *sqlx.Tx) error {
-		// Создаем роль
-		err := tx.QueryRowxContext(ctx,
-			"INSERT INTO roles (name, description) VALUES ($1, $2) RETURNING id",
-			name, description,
-		).Scan(&roleID)
+func (roleDB *RoleDataBase) bfsCheck(
+	ctx context.Context,
+	startID, targetID, permissionID uuid.UUID,
+) (bool, error) {
+	visited := make(map[uuid.UUID]bool)
+	queue := []uuid.UUID{startID}
+
+	for len(queue) > 0 {
+		currentID := queue[0]
+		queue = queue[1:]
+
+		if visited[currentID] {
+			continue
+		}
+		visited[currentID] = true
+
+		// Проверяем прямые отношения от currentID к targetID
+		direct, err := roleDB.checkDirectRelations(ctx, currentID, targetID, permissionID)
 		if err != nil {
-			if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" {
-				return fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleExists)
-			}
-			return fmt.Errorf("%s: %w", op, err)
+			return false, err
+		}
+		if direct {
+			return true, nil
 		}
 
-		// Добавляем разрешения
-		if len(permissions) > 0 {
-			_, err = tx.ExecContext(ctx, `
-				INSERT INTO role_permissions (role_id, permission_id)
-				SELECT $1, p.id FROM permissions p WHERE p.code = ANY($2)`,
-				roleID, pq.Array(permissions),
-			)
-			if err != nil {
-				return fmt.Errorf("%s: %w", op, err)
+		// Получаем все отношения, где currentID является source
+		relations, err := roleDB.getOutboundRelations(ctx, currentID)
+		if err != nil {
+			return false, err
+		}
+
+		// Добавляем всех "соседей" в очередь
+		for _, rel := range relations {
+			if !visited[rel.TargetID] {
+				queue = append(queue, rel.TargetID)
 			}
+		}
+	}
+
+	return false, nil
+}
+
+func (roleDB *RoleDataBase) checkDirectRelations(
+	ctx context.Context,
+	sourceID, targetID, permissionID uuid.UUID,
+) (bool, error) {
+	query := `
+        SELECT EXISTS(
+            SELECT 1 
+            FROM relations r
+            JOIN permission_assignments pa ON pa.relation_type = r.relation_type
+            WHERE r.source_id = $1 
+            AND r.target_id = $2
+            AND pa.permission_id = $3
+        )
+    `
+	var exists bool
+	err := roleDB.db.GetContext(ctx, &exists, query, sourceID, targetID, permissionID)
+	if err != nil {
+		return false, fmt.Errorf("failed to check direct relations: %w", err)
+	}
+	return exists, nil
+}
+
+func (roleDB *RoleDataBase) getOutboundRelations(ctx context.Context, sourceID uuid.UUID) ([]models.Relation, error) {
+	query := `
+        SELECT id, source_id, target_id, relation_type, created_at
+        FROM relations
+        WHERE source_id = $1
+    `
+	var relations []models.Relation
+	err := roleDB.db.SelectContext(ctx, &relations, query, sourceID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get outbound relations: %w", err)
+	}
+	return relations, nil
+}
+
+// CreateEntity создает новую сущность
+func (roleDB *RoleDataBase) CreateEntity(ctx context.Context, id uuid.UUID, entityType string) error {
+	return roleDB.db.WithTransaction(ctx, func(tx *sqlx.Tx) error {
+		query := `INSERT INTO entities (id, type) VALUES ($1, $2)`
+		_, err := tx.ExecContext(ctx, query, id, entityType)
+		if err != nil {
+			return fmt.Errorf("failed to create entity: %w", err)
+		}
+		return nil
+	})
+}
+
+// DeleteEntity удаляет сущность
+func (roleDB *RoleDataBase) DeleteEntity(ctx context.Context, id uuid.UUID) error {
+	return roleDB.db.WithTransaction(ctx, func(tx *sqlx.Tx) error {
+		query := `DELETE FROM entities WHERE id = $1`
+		result, err := tx.ExecContext(ctx, query, id)
+		if err != nil {
+			return fmt.Errorf("failed to delete entity: %w", err)
+		}
+
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("failed to get rows affected: %w", err)
+		}
+		if rowsAffected == 0 {
+			return ssoerrors.ErrNotFound
+		}
+
+		return nil
+	})
+}
+
+// CreateRelation создает отношение между сущностями
+func (roleDB *RoleDataBase) CreateRelation(
+	ctx context.Context,
+	sourceID, targetID uuid.UUID,
+	relationType string,
+) error {
+	return roleDB.db.WithTransaction(ctx, func(tx *sqlx.Tx) error {
+		// Проверяем существование сущностей
+		var exists bool
+		err := tx.GetContext(ctx, &exists,
+			`SELECT EXISTS(SELECT 1 FROM entities WHERE id = $1)`, sourceID)
+		if err != nil || !exists {
+			return fmt.Errorf("source entity not found: %w", err)
+		}
+
+		err = tx.GetContext(ctx, &exists,
+			`SELECT EXISTS(SELECT 1 FROM entities WHERE id = $1)`, targetID)
+		if err != nil || !exists {
+			return fmt.Errorf("target entity not found: %w", err)
+		}
+
+		// Проверяем, не существует ли уже такое отношение
+		err = tx.GetContext(ctx, &exists, `
+			SELECT EXISTS(
+				SELECT 1 FROM relations 
+				WHERE source_id = $1 AND target_id = $2 AND relation_type = $3
+			)`, sourceID, targetID, relationType)
+		if err != nil {
+			return fmt.Errorf("failed to check relation existence: %w", err)
+		}
+		if exists {
+			return ssoerrors.ErrRelationExists
+		}
+
+		// Создаем отношение
+		query := `
+			INSERT INTO relations (id, source_id, target_id, relation_type)
+			VALUES ($1, $2, $3, $4)
+		`
+		_, err = tx.ExecContext(ctx, query, uuid.New().String(), sourceID, targetID, relationType)
+		if err != nil {
+			return fmt.Errorf("failed to create relation: %w", err)
+		}
+
+		return nil
+	})
+}
+
+// DeleteRelation удаляет отношение
+func (roleDB *RoleDataBase) DeleteRelation(
+	ctx context.Context,
+	sourceID, targetID uuid.UUID,
+	relationType string,
+) error {
+	return roleDB.db.WithTransaction(ctx, func(tx *sqlx.Tx) error {
+		query := `
+			DELETE FROM relations 
+			WHERE source_id = $1 AND target_id = $2 AND relation_type = $3
+		`
+		result, err := tx.ExecContext(ctx, query, sourceID, targetID, relationType)
+		if err != nil {
+			return fmt.Errorf("failed to delete relation: %w", err)
+		}
+
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("failed to get rows affected: %w", err)
+		}
+		if rowsAffected == 0 {
+			return ssoerrors.ErrNotFound
+		}
+
+		return nil
+	})
+}
+
+// AddPermission добавляет новое разрешение
+func (roleDB *RoleDataBase) AddPermission(ctx context.Context, name, description string) (uuid.UUID, error) {
+	var id uuid.UUID
+	err := roleDB.db.WithTransaction(ctx, func(tx *sqlx.Tx) error {
+		// Проверяем, не существует ли уже разрешение с таким именем
+		var exists bool
+		err := tx.GetContext(ctx, &exists,
+			`SELECT EXISTS(SELECT 1 FROM permissions WHERE name = $1)`, name)
+		if err != nil {
+			return fmt.Errorf("failed to check permission existence: %w", err)
+		}
+		if exists {
+			return ssoerrors.ErrPermissionExists
+		}
+
+		// Создаем разрешение
+		id = uuid.New()
+		query := `
+			INSERT INTO permissions (id, name, description)
+			VALUES ($1, $2, $3)
+			RETURNING id
+		`
+		err = tx.GetContext(ctx, &id, query, id, name, description)
+		if err != nil {
+			return fmt.Errorf("failed to add permission: %w", err)
 		}
 
 		return nil
@@ -66,188 +254,124 @@ func (roleDB *RoleDataBase) CreateRole(
 	if err != nil {
 		return uuid.Nil, err
 	}
-
-	return roleID, nil
+	return id, nil
 }
 
-// DeleteRole удаляет роль
-func (roleDB *RoleDataBase) DeleteRole(ctx context.Context, roleID uuid.UUID) error {
-	const op = "storage.role.DeleteRole"
-
+// AssignPermission назначает разрешение для типа отношения
+func (roleDB *RoleDataBase) AssignPermission(ctx context.Context, permissionID uuid.UUID, relationType string) error {
 	return roleDB.db.WithTransaction(ctx, func(tx *sqlx.Tx) error {
-		// Проверяем, есть ли пользователи с этой ролью
-		var userCount int
-		err := tx.GetContext(ctx, &userCount,
-			"SELECT COUNT(*) FROM user_roles WHERE role_id = $1", roleID)
+		// Проверяем существование разрешения
+		var exists bool
+		err := tx.GetContext(ctx, &exists,
+			`SELECT EXISTS(SELECT 1 FROM permissions WHERE id = $1)`, permissionID)
+		if err != nil || !exists {
+			return fmt.Errorf("permission not found: %w", err)
+		}
+
+		// Проверяем, не назначено ли уже это разрешение
+		err = tx.GetContext(ctx, &exists, `
+			SELECT EXISTS(
+				SELECT 1 FROM permission_assignments 
+				WHERE relation_type = $1 AND permission_id = $2
+			)`, relationType, permissionID)
 		if err != nil {
-			return fmt.Errorf("%s: %w", op, err)
+			return fmt.Errorf("failed to check assignment existence: %w", err)
+		}
+		if exists {
+			return ssoerrors.ErrPermissionExists
 		}
 
-		if userCount > 0 {
-			return fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleHasUsers)
-		}
-
-		// Удаляем роль
-		result, err := tx.ExecContext(ctx, "DELETE FROM roles WHERE id = $1", roleID)
+		// Назначаем разрешение
+		query := `
+			INSERT INTO permission_assignments (relation_type, permission_id)
+			VALUES ($1, $2)
+		`
+		_, err = tx.ExecContext(ctx, query, relationType, permissionID)
 		if err != nil {
-			return fmt.Errorf("%s: %w", op, err)
-		}
-
-		rowsAffected, err := result.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("%s: %w", op, err)
-		}
-
-		if rowsAffected == 0 {
-			return fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleNotFound)
+			return fmt.Errorf("failed to assign permission: %w", err)
 		}
 
 		return nil
 	})
 }
 
-// GetRoleByID возвращает роль по ID
-func (roleDB *RoleDataBase) GetRoleByID(ctx context.Context, roleID uuid.UUID) (*models.Role, error) {
-	const op = "storage.role.GetRoleByID"
-
-	var role models.Role
-	err := roleDB.db.GetContext(ctx, &role,
-		"SELECT id, name, description FROM roles WHERE id = $1", roleID)
+// GetAllPermissions возвращает все разрешения в системе
+func (roleDB *RoleDataBase) GetAllPermissions(ctx context.Context) (*[]models.Permission, error) {
+	var permissions []models.Permission
+	query := `SELECT id, name, description, created_at FROM permissions`
+	err := roleDB.db.SelectContext(ctx, &permissions, query)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleNotFound)
-		}
-		return nil, fmt.Errorf("%s: %w", op, err)
+		return nil, fmt.Errorf("failed to get all permissions: %w", err)
 	}
-
-	return &role, nil
+	return &permissions, nil
 }
 
-// GetRoleByName возвращает роль по Name
-func (roleDB *RoleDataBase) GetRoleByName(ctx context.Context, roleName string) (*models.Role, error) {
-	const op = "storage.role.GetRoleByName"
-
-	var role models.Role
-	err := roleDB.db.GetContext(ctx, &role,
-		"SELECT id, name, description FROM roles WHERE name = $1", roleName)
+// GetUserRelations возвращает все отношения пользователя
+func (roleDB *RoleDataBase) GetUserRelations(ctx context.Context, userID uuid.UUID) (*[]models.Relation, error) {
+	var relations []models.Relation
+	query := `
+		SELECT id, source_id, target_id, relation_type, created_at 
+		FROM relations 
+		WHERE source_id = $1
+	`
+	err := roleDB.db.SelectContext(ctx, &relations, query, userID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleNotFound)
-		}
-		return nil, fmt.Errorf("%s: %w", op, err)
+		return nil, fmt.Errorf("failed to get user relations: %w", err)
 	}
-
-	return &role, nil
+	return &relations, nil
 }
 
-// ListRoles возвращает рсписок ролей с заданными limit и offset
-func (roleDB *RoleDataBase) ListRoles(ctx context.Context, limit, offset int) (*[]models.Role, error) {
-	const op = "storage.role.ListRoles"
-
-	var roles []models.Role
-	err := roleDB.db.SelectContext(ctx, &roles,
-		"SELECT id, name, description FROM roles ORDER BY name LIMIT $1 OFFSET $2",
-		limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
-	}
-
-	return &roles, nil
-}
-
-// UpdateRole обновляет описание роли
-func (roleDB *RoleDataBase) UpdateRole(
+// GetPermissionsForRelationType возвращает разрешения для типа отношения
+func (roleDB *RoleDataBase) GetPermissionsForRelationType(
 	ctx context.Context,
-	roleID uuid.UUID,
-	description string,
-) error {
-	const op = "storage.role.UpdateRole"
-
-	return roleDB.db.WithTransaction(ctx, func(tx *sqlx.Tx) error {
-		result, err := roleDB.db.ExecContext(ctx,
-			"UPDATE roles SET description = $1, updated_at = NOW() WHERE id = $2",
-			description, roleID)
-		if err != nil {
-			return fmt.Errorf("%s: %w", op, err)
-		}
-
-		rowsAffected, err := result.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("%s: %w", op, err)
-		}
-
-		if rowsAffected == 0 {
-			return fmt.Errorf("%s: %w", op, ssoerrors.ErrRoleNotFound)
-		}
-		return nil
-	})
-}
-
-// AssignRoleToUser назначает роль пользователю
-func (roleDB *RoleDataBase) AssignRoleToUser(ctx context.Context, userID, roleID uuid.UUID) error {
-	const op = "storage.role.AssignRoleToUser"
-
-	return roleDB.db.WithTransaction(ctx, func(tx *sqlx.Tx) error {
-		_, err := tx.ExecContext(ctx,
-			"INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-			userID, roleID)
-		if err != nil {
-			return fmt.Errorf("%s: %w", op, err)
-		}
-		return nil
-	})
-}
-
-// RevokeRoleFromUser отзывает роль у пользователя
-func (roleDB *RoleDataBase) RevokeRoleFromUser(ctx context.Context, userID, roleID uuid.UUID) error {
-	const op = "storage.role.RevokeRoleFromUser"
-
-	return roleDB.db.WithTransaction(ctx, func(tx *sqlx.Tx) error {
-		_, err := tx.ExecContext(ctx,
-			"DELETE FROM user_roles WHERE user_id = $1 AND role_id = $2",
-			userID, roleID)
-		if err != nil {
-			return fmt.Errorf("%s: %w", op, err)
-		}
-		return nil
-	})
-}
-
-// GetUserRoles получить роли пользователя
-func (roleDB *RoleDataBase) GetUserRoles(ctx context.Context, userID uuid.UUID) (*[]models.Role, error) {
-	const op = "storage.role.GetUserRoles"
-
-	var roles []models.Role
-	err := roleDB.db.SelectContext(ctx, &roles, `
-		SELECT r.id, r.name, r.description 
-		FROM roles r
-		JOIN user_roles ur ON r.id = ur.role_id
-		WHERE ur.user_id = $1`, userID)
+	relationType string,
+) (*[]models.Permission, error) {
+	var permissions []models.Permission
+	query := `
+		SELECT p.id, p.name, p.description, p.created_at
+		FROM permissions p
+		JOIN permission_assignments pa ON pa.permission_id = p.id
+		WHERE pa.relation_type = $1
+	`
+	err := roleDB.db.SelectContext(ctx, &permissions, query, relationType)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
+		return nil, fmt.Errorf("failed to get permissions for relation type: %w", err)
+	}
+	return &permissions, nil
+}
+
+// GetUserPermissions возвращает все разрешения пользователя
+func (roleDB *RoleDataBase) GetUserPermissions(ctx context.Context, userID uuid.UUID) (*[]models.Permission, error) {
+	query := `
+		SELECT DISTINCT p.id, p.name, p.description, p.created_at
+		FROM relations r
+		JOIN permission_assignments pa ON pa.relation_type = r.relation_type
+		JOIN permissions p ON p.id = pa.permission_id
+		WHERE r.source_id = $1
+	`
+
+	var permissions []models.Permission
+	err := roleDB.db.SelectContext(ctx, &permissions, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user permissions: %w", err)
 	}
 
-	return &roles, nil
+	return &permissions, nil
 }
 
-// HasUserRole проверяет наличие права у пользователя
-func (roleDB *RoleDataBase) HasUserRole(
-	ctx context.Context,
-	userID uuid.UUID,
-	roleName string,
-) (bool, error) {
-	const op = "storage.role.HasUserRole"
+// GetEntityRelations возвращает все отношения для сущности
+func (roleDB *RoleDataBase) GetEntityRelations(ctx context.Context, entityID uuid.UUID) (*[]models.Relation, error) {
+	query := `
+		SELECT id, source_id, target_id, relation_type, created_at
+		FROM relations
+		WHERE source_id = $1 OR target_id = $1
+	`
 
-	var exists bool
-	err := roleDB.db.GetContext(ctx, &exists, `
-		SELECT EXISTS(
-			SELECT 1 FROM user_roles ur
-			JOIN roles r ON ur.role_id = r.id
-			WHERE ur.user_id = $1 AND r.name = $2
-		)`, userID, roleName)
+	var relations []models.Relation
+	err := roleDB.db.SelectContext(ctx, &relations, query, entityID)
 	if err != nil {
-		return false, fmt.Errorf("%s: %w", op, err)
+		return nil, fmt.Errorf("failed to get entity relations: %w", err)
 	}
 
-	return exists, nil
+	return &relations, nil
 }

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"sso-service/internal/grpc/interceptor"
-	grpcperm "sso-service/internal/grpc/permission"
 	grpcrole "sso-service/internal/grpc/role"
 	grpcsession "sso-service/internal/grpc/session"
 	grpcuser "sso-service/internal/grpc/user"
@@ -26,7 +25,6 @@ func New(
 	gRPCport int,
 	tlsConfig *tls.Config,
 	roleService grpcrole.Role,
-	permService grpcperm.Permission,
 	sessionService grpcsession.Session,
 	userService grpcuser.User,
 ) *App {

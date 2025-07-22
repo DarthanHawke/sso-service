@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -32,7 +33,10 @@ func NewUserServer(gRPC *grpc.Server, user User) {
 	ssogrpc.RegisterUserServiceServer(gRPC, &UserServerAPI{user: user})
 }
 
-func (s *UserServerAPI) Register(ctx context.Context, req *ssogrpc.RegisterRequest) (*ssogrpc.RegisterResponse, error) {
+func (s *UserServerAPI) Register(
+	ctx context.Context,
+	req *ssogrpc.RegisterRequest,
+) (*ssogrpc.RegisterResponse, error) {
 	if req.Email == "" {
 		return nil, status.Error(codes.InvalidArgument, "email is required")
 	}
@@ -49,7 +53,7 @@ func (s *UserServerAPI) Register(ctx context.Context, req *ssogrpc.RegisterReque
 		return nil, status.Error(codes.Internal, "failed to register user")
 	}
 
-	return &ssogrpc.RegisterResponse{UserId: userId.String()}, nil
+	return &ssogrpc.RegisterResponse{UserId: &ssogrpc.UUID{Value: userId.String()}}, nil
 }
 
 func (s *UserServerAPI) Login(ctx context.Context, req *ssogrpc.LoginRequest) (*ssogrpc.LoginResponse, error) {
@@ -69,11 +73,14 @@ func (s *UserServerAPI) Login(ctx context.Context, req *ssogrpc.LoginRequest) (*
 		return nil, status.Error(codes.Internal, "Internal error")
 	}
 
-	return &ssogrpc.LoginResponse{UserId: userId.String()}, nil
+	return &ssogrpc.LoginResponse{UserId: &ssogrpc.UUID{Value: userId.String()}}, nil
 }
 
-func (s *UserServerAPI) GetProfile(ctx context.Context, req *ssogrpc.GetProfileRequest) (*ssogrpc.GetProfileResponse, error) {
-	userID, err := uuid.Parse(req.GetUserId())
+func (s *UserServerAPI) GetProfile(
+	ctx context.Context,
+	req *ssogrpc.GetProfileRequest,
+) (*ssogrpc.GetProfileResponse, error) {
+	userID, err := uuid.Parse(req.GetUserId().GetValue())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
 	}
@@ -86,12 +93,15 @@ func (s *UserServerAPI) GetProfile(ctx context.Context, req *ssogrpc.GetProfileR
 	return &ssogrpc.GetProfileResponse{User: convertUserToProto(userProfile)}, nil
 }
 
-func (s *UserServerAPI) UpdateUserName(ctx context.Context, req *ssogrpc.UpdateNameRequest) (*ssogrpc.UpdateNameResponse, error) {
+func (s *UserServerAPI) UpdateUserName(
+	ctx context.Context,
+	req *ssogrpc.UpdateNameRequest,
+) (*emptypb.Empty, error) {
 	if req.Name == "" {
 		return nil, status.Error(codes.InvalidArgument, "email is required")
 	}
 
-	userID, err := uuid.Parse(req.GetUserId())
+	userID, err := uuid.Parse(req.GetUserId().GetValue())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
 	}
@@ -101,15 +111,18 @@ func (s *UserServerAPI) UpdateUserName(ctx context.Context, req *ssogrpc.UpdateN
 		return nil, status.Error(codes.Internal, "failed to change user")
 	}
 
-	return &ssogrpc.UpdateNameResponse{}, nil
+	return nil, nil
 }
 
-func (s *UserServerAPI) UpdateUserEmail(ctx context.Context, req *ssogrpc.UpdateEmailRequest) (*ssogrpc.UpdateEmailResponse, error) {
+func (s *UserServerAPI) UpdateUserEmail(
+	ctx context.Context,
+	req *ssogrpc.UpdateEmailRequest,
+) (*emptypb.Empty, error) {
 	if req.Email == "" {
 		return nil, status.Error(codes.InvalidArgument, "email is required")
 	}
 
-	userID, err := uuid.Parse(req.GetUserId())
+	userID, err := uuid.Parse(req.GetUserId().GetValue())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
 	}
@@ -119,15 +132,18 @@ func (s *UserServerAPI) UpdateUserEmail(ctx context.Context, req *ssogrpc.Update
 		return nil, status.Error(codes.Internal, "failed to change user")
 	}
 
-	return &ssogrpc.UpdateEmailResponse{}, nil
+	return nil, nil
 }
 
-func (s *UserServerAPI) UpdateUserPassword(ctx context.Context, req *ssogrpc.UpdatePasswordRequest) (*ssogrpc.UpdatePasswordResponse, error) {
+func (s *UserServerAPI) UpdateUserPassword(
+	ctx context.Context,
+	req *ssogrpc.UpdatePasswordRequest,
+) (*emptypb.Empty, error) {
 	if req.Password == "" {
 		return nil, status.Error(codes.InvalidArgument, "password is required")
 	}
 
-	userID, err := uuid.Parse(req.GetUserId())
+	userID, err := uuid.Parse(req.GetUserId().GetValue())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
 	}
@@ -137,7 +153,7 @@ func (s *UserServerAPI) UpdateUserPassword(ctx context.Context, req *ssogrpc.Upd
 		return nil, status.Error(codes.Internal, "failed to change user")
 	}
 
-	return &ssogrpc.UpdatePasswordResponse{}, nil
+	return nil, nil
 }
 
 func convertUserToProto(u *models.User) (user *ssogrpc.User) {
@@ -145,7 +161,7 @@ func convertUserToProto(u *models.User) (user *ssogrpc.User) {
 		return nil
 	}
 	return &ssogrpc.User{
-		Id:        u.ID.String(),
+		Id:        &ssogrpc.UUID{Value: u.ID.String()},
 		Email:     u.Email,
 		FullName:  u.FullName,
 		CreatedAt: timestamppb.New(u.CreatedAt),

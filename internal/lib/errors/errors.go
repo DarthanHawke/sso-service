@@ -25,11 +25,13 @@ var (
 )
 
 var (
-	ErrRoleExists      = errors.New("role already exists")
-	ErrRoleNotFound    = errors.New("role not found")
-	ErrRoleName        = errors.New("role name cannot be empty")
-	ErrRoleNotAssigned = errors.New("role is not assigned to the user")
-	ErrRoleHasUsers    = errors.New("role has user")
+	ErrEntityNotFound = errors.New("entity not found")
+	ErrEntityExists   = errors.New("entity already exists")
+)
+
+var (
+	ErrRelationExists   = errors.New("role already exists")
+	ErrRelationNotFound = errors.New("role not found")
 )
 
 var (
