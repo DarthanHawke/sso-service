@@ -18,10 +18,12 @@ type RoleManage interface {
 	DeleteRelation(ctx context.Context, sourceID, targetID uuid.UUID, relationType string) error
 	AddPermission(ctx context.Context, name, description string) (uuid.UUID, error)
 	AssignPermission(ctx context.Context, permissionID uuid.UUID, relationType string) error
+	RevokePermission(ctx context.Context, permissionID uuid.UUID, relationType string) error
 }
 
 type RoleInfoManage interface {
-	CheckPermission(ctx context.Context, subjectID, objectID, permissionID uuid.UUID) (bool, error)
+	CheckPermission(ctx context.Context, subjectID, objectID uuid.UUID, permissionName string) (bool, error)
+	GetPermissionByName(ctx context.Context, name string) (*models.Permission, error)
 	GetAllPermissions(ctx context.Context) (*[]models.Permission, error)
 	GetUserRelations(ctx context.Context, userID uuid.UUID) (*[]models.Relation, error)
 	GetUserPermissions(ctx context.Context, userID uuid.UUID) (*[]models.Permission, error)
@@ -55,25 +57,23 @@ func (s *RoleService) CreateEntity(
 ) error {
 	const op = "service.role.CreateEntity"
 
-	s.logger.With(
+	logger := s.logger.With(
 		zap.String("op", op),
-		zap.String("entity_id", id.String()),
-		zap.String("entity_type", entityType),
 	)
 
-	s.logger.Info("creating new entity")
+	logger.Info("creating new entity")
 
 	// Создание сущности
 	err := s.roleManage.CreateEntity(ctx, id, entityType)
 	if err != nil {
 		if errors.Is(err, ssoerrors.ErrEntityExists) {
-			s.logger.Warn("entity exists",
+			logger.Warn("entity exists",
 				zap.String("entity_id", id.String()),
 				zap.Error(ssoerrors.ErrEntityExists),
 			)
 			return fmt.Errorf("%s: %w", op, ssoerrors.ErrEntityExists)
 		}
-		s.logger.Error("creating entity",
+		logger.Error("creating entity",
 			zap.String("entity_id", id.String()),
 			zap.String("entity_type", entityType),
 			zap.Error(err),
@@ -81,7 +81,7 @@ func (s *RoleService) CreateEntity(
 		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
-	s.logger.Debug("Successfully created entity",
+	logger.Debug("Successfully created entity",
 		zap.String("entity_id", id.String()),
 		zap.String("entity_type", entityType),
 	)
@@ -95,32 +95,28 @@ func (s *RoleService) DeleteEntity(
 ) error {
 	const op = "service.role.DeleteEntity"
 
-	s.logger.With(
+	logger := s.logger.With(
 		zap.String("op", op),
 		zap.String("entity_id", id.String()),
 	)
 
-	s.logger.Info("deleting entity")
+	logger.Info("deleting entity")
 
 	err := s.roleManage.DeleteEntity(ctx, id)
 	if err != nil {
 		if errors.Is(err, ssoerrors.ErrEntityNotFound) {
-			s.logger.Warn("entity not found",
-				zap.String("entity_id", id.String()),
+			logger.Warn("entity not found",
 				zap.Error(ssoerrors.ErrEntityNotFound),
 			)
 			return fmt.Errorf("%s: %w", op, ssoerrors.ErrEntityNotFound)
 		}
-		s.logger.Error("deleting entity",
-			zap.String("entity_id", id.String()),
+		logger.Error("deleting entity",
 			zap.Error(err),
 		)
 		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
-	s.logger.Debug("Successfully deleted entity",
-		zap.String("entity_id", id.String()),
-	)
+	logger.Debug("Successfully deleted entity")
 	return nil
 }
 
@@ -132,40 +128,30 @@ func (s *RoleService) CreateRelation(
 ) error {
 	const op = "service.role.CreateRelation"
 
-	s.logger.With(
+	logger := s.logger.With(
 		zap.String("op", op),
 		zap.String("source_id", sourceID.String()),
 		zap.String("target_id", targetID.String()),
 		zap.String("relation_type", relationType),
 	)
 
-	s.logger.Info("creating relation")
+	logger.Info("creating relation")
 
 	err := s.roleManage.CreateRelation(ctx, sourceID, targetID, relationType)
 	if err != nil {
 		if errors.Is(err, ssoerrors.ErrRelationExists) {
-			s.logger.Warn("relation exists",
-				zap.String("source_id", sourceID.String()),
-				zap.String("target_id", targetID.String()),
-				zap.String("relation_type", relationType),
+			logger.Warn("relation exists",
 				zap.Error(ssoerrors.ErrRelationExists),
 			)
 			return fmt.Errorf("%s: %w", op, ssoerrors.ErrRelationExists)
 		}
-		s.logger.Error("creating relation",
-			zap.String("source_id", sourceID.String()),
-			zap.String("target_id", targetID.String()),
-			zap.String("relation_type", relationType),
+		logger.Error("creating relation",
 			zap.Error(err),
 		)
 		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
-	s.logger.Debug("Successfully created relation",
-		zap.String("source_id", sourceID.String()),
-		zap.String("target_id", targetID.String()),
-		zap.String("relation_type", relationType),
-	)
+	logger.Debug("Successfully created relation")
 	return nil
 }
 
@@ -177,40 +163,30 @@ func (s *RoleService) DeleteRelation(
 ) error {
 	const op = "service.role.DeleteRelation"
 
-	s.logger.With(
+	logger := s.logger.With(
 		zap.String("op", op),
 		zap.String("source_id", sourceID.String()),
 		zap.String("target_id", targetID.String()),
 		zap.String("relation_type", relationType),
 	)
 
-	s.logger.Info("deleting relation")
+	logger.Info("deleting relation")
 
 	err := s.roleManage.DeleteRelation(ctx, sourceID, targetID, relationType)
 	if err != nil {
 		if errors.Is(err, ssoerrors.ErrRelationNotFound) {
-			s.logger.Warn("relation not found",
-				zap.String("source_id", sourceID.String()),
-				zap.String("target_id", targetID.String()),
-				zap.String("relation_type", relationType),
+			logger.Warn("relation not found",
 				zap.Error(ssoerrors.ErrRelationNotFound),
 			)
 			return fmt.Errorf("%s: %w", op, ssoerrors.ErrRelationNotFound)
 		}
-		s.logger.Error("deleting relation",
-			zap.String("source_id", sourceID.String()),
-			zap.String("target_id", targetID.String()),
-			zap.String("relation_type", relationType),
+		logger.Error("deleting relation",
 			zap.Error(err),
 		)
 		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
-	s.logger.Debug("Successfully deleted relation",
-		zap.String("source_id", sourceID.String()),
-		zap.String("target_id", targetID.String()),
-		zap.String("relation_type", relationType),
-	)
+	logger.Debug("Successfully deleted relation")
 	return nil
 }
 
@@ -221,32 +197,29 @@ func (s *RoleService) AddPermission(
 ) (uuid.UUID, error) {
 	const op = "service.role.AddPermission"
 
-	s.logger.With(
+	logger := s.logger.With(
 		zap.String("op", op),
 		zap.String("permission_name", name),
 	)
 
-	s.logger.Info("adding new permission")
+	logger.Info("adding new permission")
 
 	id, err := s.roleManage.AddPermission(ctx, name, description)
 	if err != nil {
 		if errors.Is(err, ssoerrors.ErrPermissionExists) {
-			s.logger.Warn("permission exists",
-				zap.String("permission_name", name),
+			logger.Warn("permission exists",
 				zap.Error(ssoerrors.ErrPermissionExists),
 			)
 			return uuid.Nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrPermissionExists)
 		}
-		s.logger.Error("adding permission",
-			zap.String("permission_name", name),
+		logger.Error("adding permission",
 			zap.Error(err),
 		)
 		return uuid.Nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
-	s.logger.Debug("Successfully added permission",
+	logger.Debug("Successfully added permission",
 		zap.String("permission_id", id.String()),
-		zap.String("permission_name", name),
 	)
 	return id, nil
 }
@@ -259,73 +232,138 @@ func (s *RoleService) AssignPermission(
 ) error {
 	const op = "service.role.AssignPermission"
 
-	s.logger.With(
+	logger := s.logger.With(
 		zap.String("op", op),
 		zap.String("permission_id", permissionID.String()),
 		zap.String("relation_type", relationType),
 	)
 
-	s.logger.Info("assigning permission to relation")
+	logger.Info("assigning permission to relation")
 
 	err := s.roleManage.AssignPermission(ctx, permissionID, relationType)
 	if err != nil {
 		if errors.Is(err, ssoerrors.ErrPermissionNotFound) {
-			s.logger.Warn("permission not found",
-				zap.String("permission_id", permissionID.String()),
+			logger.Warn("permission not found",
 				zap.Error(ssoerrors.ErrPermissionNotFound),
 			)
 			return fmt.Errorf("%s: %w", op, ssoerrors.ErrPermissionNotFound)
 		}
 
-		s.logger.Error("assigning permission",
-			zap.String("permission_id", permissionID.String()),
-			zap.String("relation_type", relationType),
+		logger.Error("assigning permission",
 			zap.Error(err),
 		)
 		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
-	s.logger.Debug("Successfully assigned permission to relation",
+	logger.Debug("Successfully assigned permission to relation")
+	return nil
+}
+
+// RevokePermission отзывает разрешение у типа связи
+func (s *RoleService) RevokePermission(
+	ctx context.Context,
+	permissionID uuid.UUID,
+	relationType string,
+) error {
+	const op = "service.role.RevokePermission"
+
+	logger := s.logger.With(
+		zap.String("op", op),
 		zap.String("permission_id", permissionID.String()),
 		zap.String("relation_type", relationType),
 	)
+
+	logger.Info("revoking permission from relation")
+
+	err := s.roleManage.RevokePermission(ctx, permissionID, relationType)
+	if err != nil {
+		switch {
+		case errors.Is(err, ssoerrors.ErrPermissionNotFound):
+			logger.Warn("permission not found",
+				zap.Error(ssoerrors.ErrPermissionNotFound),
+			)
+			return fmt.Errorf("%s: %w", op, ssoerrors.ErrPermissionNotFound)
+
+		case errors.Is(err, ssoerrors.ErrPermissionNotAssigned):
+			logger.Warn("permission was not assigned",
+				zap.Error(ssoerrors.ErrPermissionNotAssigned),
+			)
+			return fmt.Errorf("%s: %w", op, ssoerrors.ErrPermissionNotAssigned)
+
+		default:
+			logger.Error("revoking permission",
+				zap.Error(err),
+			)
+			return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
+		}
+	}
+
+	logger.Debug("Successfully revoked permission from relation")
 	return nil
 }
 
 // CheckPermission проверяет наличие разрешения у субъекта для объекта
 func (s *RoleService) CheckPermission(
 	ctx context.Context,
-	subjectID, objectID, permissionID uuid.UUID,
+	subjectID, objectID uuid.UUID,
+	permissionName string,
 ) (bool, error) {
 	const op = "service.role.CheckPermission"
 
-	s.logger.With(
+	logger := s.logger.With(
 		zap.String("op", op),
 		zap.String("subject_id", subjectID.String()),
 		zap.String("object_id", objectID.String()),
-		zap.String("permission_id", permissionID.String()),
+		zap.String("permission_id", permissionName),
 	)
 
-	s.logger.Info("checking permission")
+	logger.Info("checking permission")
 
-	hasPermission, err := s.roleInfoManage.CheckPermission(ctx, subjectID, objectID, permissionID)
+	hasPermission, err := s.roleInfoManage.CheckPermission(ctx, subjectID, objectID, permissionName)
 	if err != nil {
-		s.logger.Error("checking permission",
-			zap.String("subject_id", subjectID.String()),
-			zap.String("object_id", objectID.String()),
-			zap.String("permission_id", permissionID.String()),
+		logger.Error("checking permission",
 			zap.Error(err),
 		)
 		return false, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
-	s.logger.Debug("Permission check result",
-		zap.String("subject_id", subjectID.String()),
-		zap.String("object_id", objectID.String()),
-		zap.String("permission_id", permissionID.String()),
+	logger.Debug("Permission check result",
 		zap.Bool("has_permission", hasPermission),
 	)
 	return hasPermission, nil
+}
+
+// GetPermissionByName возвращает разрешение(models.Permission) по name
+func (s *RoleService) GetPermissionByName(
+	ctx context.Context,
+	name string,
+) (*models.Permission, error) {
+	const op = "service.role.GetPermissionByName"
+
+	logger := s.logger.With(
+		zap.String("op", op),
+		zap.String("permission name", name),
+	)
+
+	logger.Info("getting permission")
+
+	// Получение роли
+	permission, err := s.roleInfoManage.GetPermissionByName(ctx, name)
+	if err != nil {
+		if errors.Is(err, ssoerrors.ErrPermissionNotFound) {
+			logger.Warn("permission not found",
+				zap.Error(ssoerrors.ErrPermissionNotFound),
+			)
+			return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrPermissionNotFound)
+		}
+		logger.Error("getting permission",
+			zap.Error(err),
+		)
+		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
+	}
+
+	logger.Debug("Successfully get permission")
+	return permission, nil
 }
 
 // GetAllPermissions возвращает все разрешения в системе
@@ -334,21 +372,21 @@ func (s *RoleService) GetAllPermissions(
 ) (*[]models.Permission, error) {
 	const op = "service.role.GetAllPermissions"
 
-	s.logger.With(
+	logger := s.logger.With(
 		zap.String("op", op),
 	)
 
-	s.logger.Info("getting all permissions")
+	logger.Info("getting all permissions")
 
 	permissions, err := s.roleInfoManage.GetAllPermissions(ctx)
 	if err != nil {
-		s.logger.Error("getting all permissions",
+		logger.Error("getting all permissions",
 			zap.Error(err),
 		)
 		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
-	s.logger.Debug("Successfully retrieved all permissions",
+	logger.Debug("Successfully retrieved all permissions",
 		zap.Int("count", len(*permissions)),
 	)
 	return permissions, nil
@@ -361,24 +399,22 @@ func (s *RoleService) GetUserRelations(
 ) (*[]models.Relation, error) {
 	const op = "service.role.GetUserRelations"
 
-	s.logger.With(
+	logger := s.logger.With(
 		zap.String("op", op),
 		zap.String("user_id", userID.String()),
 	)
 
-	s.logger.Info("getting user relations")
+	logger.Info("getting user relations")
 
 	relations, err := s.roleInfoManage.GetUserRelations(ctx, userID)
 	if err != nil {
-		s.logger.Error("getting user relations",
-			zap.String("user_id", userID.String()),
+		logger.Error("getting user relations",
 			zap.Error(err),
 		)
 		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
-	s.logger.Debug("Successfully retrieved user relations",
-		zap.String("user_id", userID.String()),
+	logger.Debug("Successfully retrieved user relations",
 		zap.Int("count", len(*relations)),
 	)
 	return relations, nil
@@ -391,24 +427,22 @@ func (s *RoleService) GetUserPermissions(
 ) (*[]models.Permission, error) {
 	const op = "service.role.GetUserPermissions"
 
-	s.logger.With(
+	logger := s.logger.With(
 		zap.String("op", op),
 		zap.String("user_id", userID.String()),
 	)
 
-	s.logger.Info("getting user permissions")
+	logger.Info("getting user permissions")
 
 	permissions, err := s.roleInfoManage.GetUserPermissions(ctx, userID)
 	if err != nil {
-		s.logger.Error("getting user permissions",
-			zap.String("user_id", userID.String()),
+		logger.Error("getting user permissions",
 			zap.Error(err),
 		)
 		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
-	s.logger.Debug("Successfully retrieved user permissions",
-		zap.String("user_id", userID.String()),
+	logger.Debug("Successfully retrieved user permissions",
 		zap.Int("count", len(*permissions)),
 	)
 	return permissions, nil
@@ -421,24 +455,22 @@ func (s *RoleService) GetPermissionsForRelationType(
 ) (*[]models.Permission, error) {
 	const op = "service.role.GetPermissionsForRelationType"
 
-	s.logger.With(
+	logger := s.logger.With(
 		zap.String("op", op),
 		zap.String("relation_type", relationType),
 	)
 
-	s.logger.Info("getting permissions for relation type")
+	logger.Info("getting permissions for relation type")
 
 	permissions, err := s.roleInfoManage.GetPermissionsForRelationType(ctx, relationType)
 	if err != nil {
-		s.logger.Error("getting permissions for relation type",
-			zap.String("relation_type", relationType),
+		logger.Error("getting permissions for relation type",
 			zap.Error(err),
 		)
 		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
-	s.logger.Debug("Successfully retrieved permissions for relation type",
-		zap.String("relation_type", relationType),
+	logger.Debug("Successfully retrieved permissions for relation type",
 		zap.Int("count", len(*permissions)),
 	)
 	return permissions, nil
@@ -451,24 +483,22 @@ func (s *RoleService) GetEntityRelations(
 ) (*[]models.Relation, error) {
 	const op = "service.role.GetEntityRelations"
 
-	s.logger.With(
+	logger := s.logger.With(
 		zap.String("op", op),
 		zap.String("entity_id", entityID.String()),
 	)
 
-	s.logger.Info("getting entity relations")
+	logger.Info("getting entity relations")
 
 	relations, err := s.roleInfoManage.GetEntityRelations(ctx, entityID)
 	if err != nil {
-		s.logger.Error("getting entity relations",
-			zap.String("entity_id", entityID.String()),
+		logger.Error("getting entity relations",
 			zap.Error(err),
 		)
 		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
-	s.logger.Debug("Successfully retrieved entity relations",
-		zap.String("entity_id", entityID.String()),
+	logger.Debug("Successfully retrieved entity relations",
 		zap.Int("count", len(*relations)),
 	)
 	return relations, nil

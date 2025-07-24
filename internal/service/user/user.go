@@ -63,26 +63,25 @@ func NewUserService(
 func (s *UserService) Register(ctx context.Context, fullName, email, password string) (uuid.UUID, error) {
 	const op = "service.user.Register"
 
-	s.logger.With(
+	logger := s.logger.With(
 		zap.String("op", op),
-		zap.String("email: ", email),
 	)
-	s.logger.Info("registering new user")
+	logger.Info("registering new user")
 
 	// Валидация
 	if err := validator.ValidateEmail(email); err != nil {
-		s.logger.Warn("invalide email", zap.String("email", email), zap.Error(err))
+		logger.Warn("invalide email", zap.String("email", email), zap.Error(err))
 		return uuid.Nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInvalidEmail)
 	}
 	if err := validator.ValidatePassword(password); err != nil {
-		s.logger.Warn("invalide password", zap.Error(err))
+		logger.Warn("invalide password", zap.Error(err))
 		return uuid.Nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrPasswordTooWeak)
 	}
 
 	// Хеширование пароля
 	passwordHash, err := s.hasher.GenerateHash(password)
 	if err != nil {
-		s.logger.Error("hasing password", zap.Error(err))
+		logger.Error("hasing password", zap.Error(err))
 		return uuid.Nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
@@ -90,16 +89,16 @@ func (s *UserService) Register(ctx context.Context, fullName, email, password st
 	id, err := s.userManage.CreateUser(ctx, email, passwordHash, fullName)
 	if err != nil {
 		if errors.Is(err, ssoerrors.ErrUserExists) {
-			s.logger.Warn("user exisits", zap.String("email", email), zap.Error(err))
+			logger.Warn("user exisits", zap.String("email", email), zap.Error(err))
 
 			return uuid.Nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrUserExists)
 		}
-		s.logger.Error("create error", zap.String("email", email), zap.Error(err))
+		logger.Error("create error", zap.String("email", email), zap.Error(err))
 
 		return uuid.Nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
-	s.logger.Debug("Successfully registerd new user",
+	logger.Debug("Successfully registerd new user",
 		zap.String("UserID", id.String()),
 	)
 	return id, nil
@@ -109,21 +108,20 @@ func (s *UserService) Register(ctx context.Context, fullName, email, password st
 func (s *UserService) Login(ctx context.Context, email, password string) (uuid.UUID, error) {
 	const op = "service.user.Login"
 
-	s.logger.With(
+	logger := s.logger.With(
 		zap.String("op", op),
-		zap.String("email: ", email),
 	)
 
-	s.logger.Info("login user")
+	logger.Info("login user")
 
 	user, err := s.userGet.GetUserByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, ssoerrors.ErrUserNotFound) {
-			s.logger.Warn("user not found", zap.String("email", email), zap.Error(err))
+			logger.Warn("user not found", zap.String("email", email), zap.Error(err))
 
 			return uuid.Nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInvalidCredentials)
 		}
-		s.logger.Warn("cannot getting user", zap.String("email", email), zap.Error(err))
+		logger.Warn("cannot getting user", zap.String("email", email), zap.Error(err))
 
 		return uuid.Nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
@@ -131,17 +129,17 @@ func (s *UserService) Login(ctx context.Context, email, password string) (uuid.U
 	// Проверка пароля
 	passwordStatus, err := s.hasher.CompareHashAndData(password, user.PasswordHash)
 	if err != nil {
-		s.logger.Error("error to compare passwords", zap.String("email", email), zap.Error(err))
+		logger.Error("error to compare passwords", zap.String("email", email), zap.Error(err))
 
 		return uuid.Nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInvalidCredentials)
 	}
 	if !passwordStatus {
-		s.logger.Warn("password incorrect", zap.String("email", email))
+		logger.Warn("password incorrect", zap.String("email", email))
 
 		return uuid.Nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInvalidCredentials)
 	}
 
-	s.logger.Debug("Successfully login user",
+	logger.Debug("Successfully login user",
 		zap.String("UserID", user.ID.String()),
 	)
 	return user.ID, nil
@@ -151,23 +149,23 @@ func (s *UserService) Login(ctx context.Context, email, password string) (uuid.U
 func (s *UserService) GetProfile(ctx context.Context, userID uuid.UUID) (*models.User, error) {
 	const op = "service.user.GetProfile"
 
-	s.logger.With(
+	logger := s.logger.With(
 		zap.String("op", op),
 	)
 
-	s.logger.Info("getting user")
+	logger.Info("getting user")
 
 	user, err := s.userGet.GetUserByID(ctx, userID)
 	if err != nil {
 		if errors.Is(err, ssoerrors.ErrUserNotFound) {
-			s.logger.Warn("user not found",
+			logger.Warn("user not found",
 				zap.String("UserID", userID.String()),
 				zap.Error(ssoerrors.ErrUserNotFound),
 			)
 
 			return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrUserNotFound)
 		}
-		s.logger.Warn("cannot getting user",
+		logger.Warn("cannot getting user",
 			zap.String("UserID", userID.String()),
 			zap.Error(err),
 		)
@@ -178,7 +176,7 @@ func (s *UserService) GetProfile(ctx context.Context, userID uuid.UUID) (*models
 	// Скрываем хеш пароля
 	user.PasswordHash = ""
 
-	s.logger.Debug("Successfully get user",
+	logger.Debug("Successfully get user",
 		zap.String("UserID", userID.String()),
 	)
 	return user, nil
@@ -192,24 +190,24 @@ func (s *UserService) UpdateUserName(
 ) error {
 	const op = "service.user.UpdateUserName"
 
-	s.logger.With(
+	logger := s.logger.With(
 		zap.String("op", op),
 	)
 
-	s.logger.Info("updating user")
+	logger.Info("updating user")
 
 	if err := s.userUpdate.UpdateUserName(ctx, userID, fulName); err != nil {
 		if errors.Is(err, ssoerrors.ErrUserExists) {
-			s.logger.Warn("user not found", zap.Error(ssoerrors.ErrUserExists))
+			logger.Warn("user not found", zap.Error(ssoerrors.ErrUserExists))
 
 			return fmt.Errorf("%s: %w", op, ssoerrors.ErrUserExists)
 		}
-		s.logger.Warn("cannot update user", zap.Error(err))
+		logger.Warn("cannot update user", zap.Error(err))
 
 		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
-	s.logger.Debug("Successfully update user",
+	logger.Debug("Successfully update user",
 		zap.String("UserID", userID.String()),
 	)
 	return nil
@@ -223,29 +221,29 @@ func (s *UserService) UpdateUserEmail(
 ) error {
 	const op = "service.user.UpdateUserEmail"
 
-	s.logger.With(
+	logger := s.logger.With(
 		zap.String("op", op),
 	)
 
-	s.logger.Info("updating user")
+	logger.Info("updating user")
 
 	// Валидация
 	if err := validator.ValidateEmail(email); err != nil {
-		s.logger.Warn("invalide email", zap.String("email", email), zap.Error(err))
+		logger.Warn("invalide email", zap.String("email", email), zap.Error(err))
 		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInvalidEmail)
 	}
 	if err := s.userUpdate.UpdateUserEmail(ctx, userID, email); err != nil {
 		if errors.Is(err, ssoerrors.ErrUserExists) {
-			s.logger.Warn("user not found", zap.Error(ssoerrors.ErrUserExists))
+			logger.Warn("user not found", zap.Error(ssoerrors.ErrUserExists))
 
 			return fmt.Errorf("%s: %w", op, ssoerrors.ErrUserExists)
 		}
-		s.logger.Warn("cannot update user", zap.Error(err))
+		logger.Warn("cannot update user", zap.Error(err))
 
 		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
-	s.logger.Debug("Successfully update user",
+	logger.Debug("Successfully update user",
 		zap.String("UserID", userID.String()),
 	)
 	return nil
@@ -259,39 +257,39 @@ func (s *UserService) UpdateUserPassword(
 ) error {
 	const op = "service.user.UpdateUserPassword"
 
-	s.logger.With(
+	logger := s.logger.With(
 		zap.String("op", op),
 	)
 
-	s.logger.Info("updating user")
+	logger.Info("updating user")
 
 	if password != "" {
 		// Валидация
 		if err := validator.ValidatePassword(password); err != nil {
-			s.logger.Warn("invalide password", zap.Error(err))
+			logger.Warn("invalide password", zap.Error(err))
 			return fmt.Errorf("%s: %w", op, ssoerrors.ErrPasswordTooWeak)
 		}
 		// Хеширование пароля
 		passwordHash, err := s.hasher.GenerateHash(password)
 		if err != nil {
-			s.logger.Error("hasing password", zap.Error(err))
+			logger.Error("hasing password", zap.Error(err))
 
 			return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 		}
 
 		if err := s.userUpdate.UpdateUserPassword(ctx, userID, passwordHash); err != nil {
 			if errors.Is(err, ssoerrors.ErrUserExists) {
-				s.logger.Warn("user not found", zap.Error(ssoerrors.ErrUserExists))
+				logger.Warn("user not found", zap.Error(ssoerrors.ErrUserExists))
 
 				return fmt.Errorf("%s: %w", op, ssoerrors.ErrUserExists)
 			}
-			s.logger.Warn("cannot update user", zap.Error(err))
+			logger.Warn("cannot update user", zap.Error(err))
 
 			return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 		}
 	}
 
-	s.logger.Debug("Successfully update user",
+	logger.Debug("Successfully update user",
 		zap.String("UserID", userID.String()),
 	)
 	return nil

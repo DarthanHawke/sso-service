@@ -19,7 +19,9 @@ type Role interface {
 	DeleteRelation(ctx context.Context, sourceID, targetID uuid.UUID, relationType string) error
 	AddPermission(ctx context.Context, name, description string) (uuid.UUID, error)
 	AssignPermission(ctx context.Context, permissionID uuid.UUID, relationType string) error
-	CheckPermission(ctx context.Context, subjectID, objectID, permissionID uuid.UUID) (bool, error)
+	RevokePermission(ctx context.Context, permissionID uuid.UUID, relationType string) error
+	CheckPermission(ctx context.Context, subjectID, objectID uuid.UUID, permissionName string) (bool, error)
+	GetPermissionByName(ctx context.Context, name string) (*models.Permission, error)
 	GetAllPermissions(ctx context.Context) (*[]models.Permission, error)
 	GetUserRelations(ctx context.Context, userID uuid.UUID) (*[]models.Relation, error)
 	GetUserPermissions(ctx context.Context, userID uuid.UUID) (*[]models.Permission, error)
@@ -160,6 +162,26 @@ func (s *RoleServerAPI) AssignPermission(
 	return &emptypb.Empty{}, nil
 }
 
+func (s *RoleServerAPI) RevokePermission(
+	ctx context.Context,
+	req *ssogrpc.RevokePermissionRequest,
+) (*emptypb.Empty, error) {
+	permissionID, err := uuid.Parse(req.GetPermissionId().GetValue())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid permission UUID format: %v", err)
+	}
+
+	if req.GetRelationType() == "" {
+		return nil, status.Error(codes.InvalidArgument, "relation type is required")
+	}
+
+	err = s.role.RevokePermission(ctx, permissionID, req.GetRelationType())
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to assign permission")
+	}
+	return &emptypb.Empty{}, nil
+}
+
 func (s *RoleServerAPI) CheckPermission(
 	ctx context.Context,
 	req *ssogrpc.CheckPermissionRequest,
@@ -174,18 +196,27 @@ func (s *RoleServerAPI) CheckPermission(
 		return nil, status.Errorf(codes.InvalidArgument, "invalid object UUID format: %v", err)
 	}
 
-	permissionID, err := uuid.Parse(req.GetPermissionId().GetValue())
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid permission UUID format: %v", err)
-	}
-
-	hasPermission, err := s.role.CheckPermission(ctx, subjectID, objectID, permissionID)
+	hasPermission, err := s.role.CheckPermission(ctx, subjectID, objectID, req.GetName())
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to check permission")
 	}
 
 	return &ssogrpc.CheckPermissionResponse{
 		HasPermission: hasPermission,
+	}, nil
+}
+
+func (s *RoleServerAPI) GetPermissionByName(
+	ctx context.Context,
+	req *ssogrpc.GetPermissionByNameRequest,
+) (*ssogrpc.GetPermissionByNameResponse, error) {
+	permission, err := s.role.GetPermissionByName(ctx, req.GetName())
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to get permissions")
+	}
+
+	return &ssogrpc.GetPermissionByNameResponse{
+		Permission: convertPermissionToProto(permission),
 	}, nil
 }
 
@@ -226,7 +257,7 @@ func (s *RoleServerAPI) GetUserPermissions(
 	ctx context.Context,
 	req *ssogrpc.GetUserPermissionsRequest,
 ) (*ssogrpc.GetUserPermissionsResponse, error) {
-	userID, err := uuid.Parse(req.GetUserId())
+	userID, err := uuid.Parse(req.GetUserId().GetValue())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid user UUID format: %v", err)
 	}
@@ -237,7 +268,7 @@ func (s *RoleServerAPI) GetUserPermissions(
 	}
 
 	return &ssogrpc.GetUserPermissionsResponse{
-		Permission: convertPermissionsToProto(permissions),
+		Permissions: convertPermissionsToProto(permissions),
 	}, nil
 }
 

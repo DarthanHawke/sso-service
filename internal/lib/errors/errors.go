@@ -35,8 +35,9 @@ var (
 )
 
 var (
-	ErrPermissionExists   = errors.New("permission already exists")
-	ErrPermissionNotFound = errors.New("permission not found")
-	ErrPermissionName     = errors.New("permission name cannot be empty")
-	ErrPermissionHasRoles = errors.New("permission has user")
+	ErrPermissionExists      = errors.New("permission already exists")
+	ErrPermissionNotAssigned = errors.New("permission not assigned")
+	ErrPermissionNotFound    = errors.New("permission not found")
+	ErrPermissionName        = errors.New("permission name cannot be empty")
+	ErrPermissionHasRoles    = errors.New("permission has user")
 )

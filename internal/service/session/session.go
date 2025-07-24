@@ -70,16 +70,16 @@ func NewSessionService(
 func (s *SessionService) CreateSession(ctx context.Context, userID uuid.UUID) (*models.UserSession, error) {
 	const op = "service.session.CreateRole"
 
-	s.logger.With(
+	logger := s.logger.With(
 		zap.String("op", op),
 	)
 
-	s.logger.Info("creating new session")
+	logger.Info("creating new session")
 
 	// Генерация токенов
 	refreshToken, err := s.jwtManager.GenerateRefreshToken()
 	if err != nil {
-		s.logger.Error("generate refresh token", zap.String("UserID", userID.String()), zap.Error(err))
+		logger.Error("generate refresh token", zap.String("UserID", userID.String()), zap.Error(err))
 
 		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
@@ -98,26 +98,26 @@ func (s *SessionService) CreateSession(ctx context.Context, userID uuid.UUID) (*
 	}
 
 	if err := s.sessionManage.CreateSession(ctx, userID, refreshTokenHash, userIP, userAgent, expiresAt); err != nil {
-		s.logger.Error("hashing token", zap.String("UserID", userID.String()), zap.Error(err))
+		logger.Error("hashing token", zap.String("UserID", userID.String()), zap.Error(err))
 
 		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
 	session, err := s.sessionGet.GetSessionByToken(ctx, refreshTokenHash)
 	if err != nil {
-		s.logger.Error("get session", zap.String("UserID", userID.String()), zap.Error(err))
+		logger.Error("get session", zap.String("UserID", userID.String()), zap.Error(err))
 
 		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
 	accessToken, err := s.jwtManager.GenerateAccessToken(userID, session.ID)
 	if err != nil {
-		s.logger.Error("generate accsess token", zap.String("UserID", userID.String()), zap.Error(err))
+		logger.Error("generate accsess token", zap.String("UserID", userID.String()), zap.Error(err))
 
 		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
-	s.logger.Debug("Successfully created session",
+	logger.Debug("Successfully created session",
 		zap.String("UserID", userID.String()),
 	)
 	return &models.UserSession{
@@ -134,11 +134,11 @@ func (s *SessionService) RefreshSession(
 ) (*models.UserSession, error) {
 	const op = "service.session.RefreshSession"
 
-	s.logger.With(
+	logger := s.logger.With(
 		zap.String("op", op),
 	)
 
-	s.logger.Info("refreshing session")
+	logger.Info("refreshing session")
 
 	// Хеширование токена
 	refreshTokenHash := s.hasher.HashToken(refreshToken)
@@ -146,11 +146,11 @@ func (s *SessionService) RefreshSession(
 	oldSession, err := s.sessionGet.GetSessionByToken(ctx, refreshTokenHash)
 	if err != nil {
 		if errors.Is(err, ssoerrors.ErrSessionNotFound) {
-			s.logger.Warn("sessinon dont get", zap.String("UserID", userID.String()), zap.Error(err))
+			logger.Warn("sessinon dont get", zap.String("UserID", userID.String()), zap.Error(err))
 
 			return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 		}
-		s.logger.Warn("sessinon dont get", zap.String("UserID", userID.String()), zap.Error(err))
+		logger.Warn("sessinon dont get", zap.String("UserID", userID.String()), zap.Error(err))
 
 		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
@@ -162,7 +162,7 @@ func (s *SessionService) RefreshSession(
 
 	// Удаляем старую сессию
 	if err := s.sessionManage.DeleteSession(ctx, oldSession.ID); err != nil {
-		s.logger.Error("cannot delete session",
+		logger.Error("cannot delete session",
 			zap.String("UserID", userID.String()),
 			zap.String("SessionID", oldSession.ID.String()),
 			zap.Error(err),
@@ -179,24 +179,24 @@ func (s *SessionService) RefreshSession(
 func (s *SessionService) Logout(ctx context.Context, userID, sessionID uuid.UUID) error {
 	const op = "service.session.Logout"
 
-	s.logger.With(
+	logger := s.logger.With(
 		zap.String("op", op),
 	)
 
-	s.logger.Info("logout session")
+	logger.Info("logout session")
 
 	if err := s.sessionManage.DeleteSession(ctx, sessionID); err != nil {
 		if errors.Is(err, ssoerrors.ErrSessionNotFound) {
-			s.logger.Warn("cannot delete session", zap.String("SessionID", sessionID.String()), zap.Error(err))
+			logger.Warn("cannot delete session", zap.String("SessionID", sessionID.String()), zap.Error(err))
 
 			return fmt.Errorf("%s: %w", op, ssoerrors.ErrSessionNotFound)
 		}
-		s.logger.Error("cannot delete session", zap.String("SessionID", sessionID.String()), zap.Error(err))
+		logger.Error("cannot delete session", zap.String("SessionID", sessionID.String()), zap.Error(err))
 
 		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
-	s.logger.Debug("Successfully logout",
+	logger.Debug("Successfully logout",
 		zap.String("UserID", userID.String()),
 	)
 	return nil
@@ -206,19 +206,19 @@ func (s *SessionService) Logout(ctx context.Context, userID, sessionID uuid.UUID
 func (s *SessionService) LogoutAll(ctx context.Context, userID uuid.UUID) error {
 	const op = "service.session.LogoutAll"
 
-	s.logger.With(
+	logger := s.logger.With(
 		zap.String("op", op),
 	)
 
-	s.logger.Info("logout all session")
+	logger.Info("logout all session")
 
 	if err := s.sessionManage.DeleteAllUserSessions(ctx, userID); err != nil {
-		s.logger.Error("cannot delete sessions", zap.String("UserID", userID.String()), zap.Error(err))
+		logger.Error("cannot delete sessions", zap.String("UserID", userID.String()), zap.Error(err))
 
 		return fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
-	s.logger.Debug("Successfully logout from all devices",
+	logger.Debug("Successfully logout from all devices",
 		zap.String("UserID", userID.String()),
 	)
 	return nil
@@ -228,19 +228,19 @@ func (s *SessionService) LogoutAll(ctx context.Context, userID uuid.UUID) error 
 func (s *SessionService) GetUserSessions(ctx context.Context, userID uuid.UUID) (*[]models.Session, error) {
 	const op = "service.session.GetAllSessions"
 
-	s.logger.With(
+	logger := s.logger.With(
 		zap.String("op", op),
 	)
 
-	s.logger.Info("Get all session")
+	logger.Info("Get all session")
 	sessions, err := s.sessionGet.GetUserSessions(ctx, userID)
 	if err != nil {
-		s.logger.Error("cannot delete sessions", zap.String("UserID", userID.String()), zap.Error(err))
+		logger.Error("cannot delete sessions", zap.String("UserID", userID.String()), zap.Error(err))
 
 		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
 	}
 
-	s.logger.Debug("Successfully get all sessions",
+	logger.Debug("Successfully get all sessions",
 		zap.String("UserID", userID.String()),
 	)
 	return sessions, nil
