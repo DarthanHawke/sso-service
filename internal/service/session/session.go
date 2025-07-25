@@ -68,7 +68,7 @@ func NewSessionService(
 
 // CreateSession - cоздание сессии
 func (s *SessionService) CreateSession(ctx context.Context, userID uuid.UUID) (*models.UserSession, error) {
-	const op = "service.session.CreateRole"
+	const op = "service.session.CreateSession"
 
 	logger := s.logger.With(
 		zap.String("op", op),

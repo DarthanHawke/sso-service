@@ -1,10 +1,9 @@
 CREATE TABLE relations (
-    id UUID PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     source_id UUID NOT NULL REFERENCES entities(id),
     target_id UUID NOT NULL REFERENCES entities(id),
-    relation_type VARCHAR(50) NOT NULL, -- 'owner', 'member', 'admin', 'support'
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    attributes JSONB
+    relation_type VARCHAR(50) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 CREATE TABLE permission_assignments (

@@ -31,6 +31,7 @@ func (roleDB *RoleDataBase) CheckPermission(
 ) (bool, error) {
 	const op = "storage.role.CheckPermission"
 
+	// Получаем ID разрешения по имени
 	var permID uuid.UUID
 	err := roleDB.db.GetContext(ctx, &permID,
 		"SELECT id FROM permissions WHERE name = $1", permissionName)
@@ -41,7 +42,8 @@ func (roleDB *RoleDataBase) CheckPermission(
 		return false, fmt.Errorf("%s: %w", op, err)
 	}
 
-	found, err := roleDB.bfsCheck(ctx, subjectID, objectID, permID)
+	// Проверяем все возможные пути от субъекта к объекту
+	found, err := roleDB.checkPermissionPaths(ctx, subjectID, objectID, permID)
 	if err != nil {
 		return false, fmt.Errorf("%s: %w", op, err)
 	}
@@ -49,94 +51,53 @@ func (roleDB *RoleDataBase) CheckPermission(
 	return found, nil
 }
 
-func (roleDB *RoleDataBase) bfsCheck(
+func (roleDB *RoleDataBase) checkPermissionPaths(
 	ctx context.Context,
-	startID, targetID, permissionID uuid.UUID,
+	subjectID, objectID, permissionID uuid.UUID,
 ) (bool, error) {
-	const op = "storage.role.bfsCheck"
-
-	visited := make(map[uuid.UUID]bool)
-	queue := []uuid.UUID{startID}
-
-	for len(queue) > 0 {
-		currentID := queue[0]
-		queue = queue[1:]
-
-		if visited[currentID] {
-			continue
-		}
-		visited[currentID] = true
-		// Проверяем прямые отношения от currentID к targetID
-		direct, err := roleDB.checkDirectRelations(ctx, currentID, targetID, permissionID)
-		if err != nil {
-			return false, fmt.Errorf("%s: %w", op, err)
-		}
-		if direct {
-			return true, nil
-		}
-
-		// Получаем все отношения, где currentID является source
-		relations, err := roleDB.getOutboundRelations(ctx, currentID)
-		if err != nil {
-			return false, fmt.Errorf("%s: %w", op, err)
-		}
-
-		// Добавляем всех "соседей" в очередь
-		for _, rel := range relations {
-			if !visited[rel.TargetID] {
-				queue = append(queue, rel.TargetID)
-			}
-		}
-	}
-
-	return false, nil
-}
-
-func (roleDB *RoleDataBase) checkDirectRelations(
-	ctx context.Context,
-	sourceID, targetID, permissionID uuid.UUID,
-) (bool, error) {
-	const op = "storage.role.checkDirectRelations"
-
 	query := `
-        SELECT EXISTS(
-            SELECT 1 
+        WITH RECURSIVE access_path(source, target, relation, depth) AS (
+            --все исходящие отношения от субъекта
+            SELECT r.source_id, r.target_id, r.relation_type, 1
             FROM relations r
-            JOIN permission_assignments pa ON pa.relation_type = r.relation_type
-            WHERE r.source_id = $1 
-            AND r.target_id = $2
+            WHERE r.source_id = $1
+            
+            UNION
+            
+            -- обход графа
+            SELECT r.source_id, r.target_id, r.relation_type, ap.depth + 1
+            FROM relations r
+            JOIN access_path ap ON r.source_id = ap.target
+            WHERE ap.depth < 6 -- Ограничение глубины
+        )
+        SELECT EXISTS(
+            SELECT 1 FROM access_path ap
+            JOIN permission_assignments pa ON pa.relation_type = ap.relation
+            WHERE ap.target = $2
             AND pa.permission_id = $3
         )
     `
 	var exists bool
-	err := roleDB.db.GetContext(ctx, &exists, query, sourceID, targetID, permissionID)
-	if err != nil {
-		return false, fmt.Errorf("failed to check direct relations: %s: %w", op, err)
-	}
-	return exists, nil
-}
-
-func (roleDB *RoleDataBase) getOutboundRelations(
-	ctx context.Context,
-	sourceID uuid.UUID,
-) ([]models.Relation, error) {
-	const op = "storage.role.getOutboundRelations"
-
-	query := `
-        SELECT id, source_id, target_id, relation_type, created_at
-        FROM relations
-        WHERE source_id = $1
-    `
-	var relations []models.Relation
-	err := roleDB.db.SelectContext(ctx, &relations, query, sourceID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get outbound relations: %s: %w", op, err)
-	}
-	return relations, nil
+	err := roleDB.db.GetContext(ctx, &exists, query, subjectID, objectID, permissionID)
+	return exists, err
 }
 
 // CreateEntity создает новую сущность
-func (roleDB *RoleDataBase) CreateEntity(ctx context.Context, id uuid.UUID, entityType string) error {
+func (roleDB *RoleDataBase) CreateEntity(ctx context.Context, entityType string) error {
+	const op = "storage.role.CreateEntity"
+
+	return roleDB.db.WithTransaction(ctx, func(tx *sqlx.Tx) error {
+		query := `INSERT INTO entities (type) VALUES ($1)`
+		_, err := tx.ExecContext(ctx, query, entityType)
+		if err != nil {
+			return fmt.Errorf("failed to create entity: %s: %w", op, err)
+		}
+		return nil
+	})
+}
+
+// CreateEntity создает новую сущность
+func (roleDB *RoleDataBase) CreateEntityWithID(ctx context.Context, id uuid.UUID, entityType string) error {
 	const op = "storage.role.CreateEntity"
 
 	return roleDB.db.WithTransaction(ctx, func(tx *sqlx.Tx) error {
@@ -269,14 +230,12 @@ func (roleDB *RoleDataBase) AddPermission(ctx context.Context, name, description
 			return fmt.Errorf("failed to check permission existence: %s: %w", op, ssoerrors.ErrPermissionExists)
 		}
 
-		// Создаем разрешение
-		id = uuid.New()
 		query := `
-			INSERT INTO permissions (id, name, description)
-			VALUES ($1, $2, $3)
+			INSERT INTO permissions (name, description)
+			VALUES ($1, $2)
 			RETURNING id
 		`
-		err = tx.GetContext(ctx, &id, query, id, name, description)
+		err = tx.GetContext(ctx, &id, query, name, description)
 		if err != nil {
 			return fmt.Errorf("failed to add permission: %s: %w", op, err)
 		}
@@ -390,6 +349,23 @@ func (roleDB *RoleDataBase) GetAllPermissions(ctx context.Context) (*[]models.Pe
 		return nil, fmt.Errorf("failed to get all permissions: %s: %w", op, err)
 	}
 	return &permissions, nil
+}
+
+// GetEntityID возвращает ID сущности по её типу
+func (roleDB *RoleDataBase) GetEntityID(ctx context.Context, entityType string) (uuid.UUID, error) {
+	const op = "storage.role.GetEntityID"
+	var id uuid.UUID
+
+	query := `SELECT id FROM entities WHERE type = $1 LIMIT 1`
+	err := roleDB.db.GetContext(ctx, &id, query, entityType)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return uuid.Nil, fmt.Errorf("%s: entity with type %s not found", op, entityType)
+		}
+		return uuid.Nil, fmt.Errorf("%s: failed to get entity ID: %w", op, err)
+	}
+
+	return id, nil
 }
 
 // GetUserRelations возвращает все отношения пользователя

@@ -2,6 +2,8 @@ package role
 
 import (
 	"context"
+	"errors"
+	ssoerrors "sso-service/internal/lib/errors"
 	"sso-service/internal/models"
 
 	ssogrpc "github.com/DarthanHawke/protos-payment-system/gen/go/sso"
@@ -22,6 +24,7 @@ type Role interface {
 	RevokePermission(ctx context.Context, permissionID uuid.UUID, relationType string) error
 	CheckPermission(ctx context.Context, subjectID, objectID uuid.UUID, permissionName string) (bool, error)
 	GetPermissionByName(ctx context.Context, name string) (*models.Permission, error)
+	GetEntityID(ctx context.Context, entityType string) (uuid.UUID, error)
 	GetAllPermissions(ctx context.Context) (*[]models.Permission, error)
 	GetUserRelations(ctx context.Context, userID uuid.UUID) (*[]models.Relation, error)
 	GetUserPermissions(ctx context.Context, userID uuid.UUID) (*[]models.Permission, error)
@@ -42,15 +45,13 @@ func (s *RoleServerAPI) CreateEntity(
 	ctx context.Context,
 	req *ssogrpc.CreateEntityRequest,
 ) (*emptypb.Empty, error) {
+	if req.GetEntityType() == "" {
+		return nil, status.Error(codes.InvalidArgument, "entity type is required")
+	}
 	id, err := uuid.Parse(req.GetId().GetValue())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
 	}
-
-	if req.GetEntityType() == "" {
-		return nil, status.Error(codes.InvalidArgument, "entity type is required")
-	}
-
 	err = s.role.CreateEntity(ctx, id, req.GetEntityType())
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to create entity")
@@ -217,6 +218,27 @@ func (s *RoleServerAPI) GetPermissionByName(
 
 	return &ssogrpc.GetPermissionByNameResponse{
 		Permission: convertPermissionToProto(permission),
+	}, nil
+}
+
+func (s *RoleServerAPI) GetEntityId(
+	ctx context.Context,
+	req *ssogrpc.GetEntityIdRequest,
+) (*ssogrpc.GetEntityIdResponse, error) {
+	if req.GetEntityType() == "" {
+		return nil, status.Error(codes.InvalidArgument, "entity type is required")
+	}
+
+	id, err := s.role.GetEntityID(ctx, req.GetEntityType())
+	if err != nil {
+		if errors.Is(err, ssoerrors.ErrEntityNotFound) {
+			return nil, status.Error(codes.NotFound, "entity not found")
+		}
+		return nil, status.Error(codes.Internal, "failed to get entity ID")
+	}
+
+	return &ssogrpc.GetEntityIdResponse{
+		Id: &ssogrpc.UUID{Value: id.String()},
 	}, nil
 }
 

@@ -12,7 +12,8 @@ import (
 )
 
 type RoleManage interface {
-	CreateEntity(ctx context.Context, id uuid.UUID, entityType string) error
+	CreateEntity(ctx context.Context, entityType string) error
+	CreateEntityWithID(ctx context.Context, id uuid.UUID, entityType string) error
 	DeleteEntity(ctx context.Context, id uuid.UUID) error
 	CreateRelation(ctx context.Context, sourceID, targetID uuid.UUID, relationType string) error
 	DeleteRelation(ctx context.Context, sourceID, targetID uuid.UUID, relationType string) error
@@ -24,6 +25,7 @@ type RoleManage interface {
 type RoleInfoManage interface {
 	CheckPermission(ctx context.Context, subjectID, objectID uuid.UUID, permissionName string) (bool, error)
 	GetPermissionByName(ctx context.Context, name string) (*models.Permission, error)
+	GetEntityID(ctx context.Context, entityType string) (uuid.UUID, error)
 	GetAllPermissions(ctx context.Context) (*[]models.Permission, error)
 	GetUserRelations(ctx context.Context, userID uuid.UUID) (*[]models.Relation, error)
 	GetUserPermissions(ctx context.Context, userID uuid.UUID) (*[]models.Permission, error)
@@ -64,17 +66,21 @@ func (s *RoleService) CreateEntity(
 	logger.Info("creating new entity")
 
 	// Создание сущности
-	err := s.roleManage.CreateEntity(ctx, id, entityType)
+	var err error
+	switch {
+	case id == uuid.Nil:
+		err = s.roleManage.CreateEntity(ctx, entityType)
+	case id != uuid.Nil:
+		err = s.roleManage.CreateEntityWithID(ctx, id, entityType)
+	}
 	if err != nil {
 		if errors.Is(err, ssoerrors.ErrEntityExists) {
 			logger.Warn("entity exists",
-				zap.String("entity_id", id.String()),
 				zap.Error(ssoerrors.ErrEntityExists),
 			)
 			return fmt.Errorf("%s: %w", op, ssoerrors.ErrEntityExists)
 		}
 		logger.Error("creating entity",
-			zap.String("entity_id", id.String()),
 			zap.String("entity_type", entityType),
 			zap.Error(err),
 		)
@@ -82,7 +88,6 @@ func (s *RoleService) CreateEntity(
 	}
 
 	logger.Debug("Successfully created entity",
-		zap.String("entity_id", id.String()),
 		zap.String("entity_type", entityType),
 	)
 	return nil
@@ -390,6 +395,42 @@ func (s *RoleService) GetAllPermissions(
 		zap.Int("count", len(*permissions)),
 	)
 	return permissions, nil
+}
+
+// GetEntityID возвращает ID сущности по её типу
+func (s *RoleService) GetEntityID(
+	ctx context.Context,
+	entityType string,
+) (uuid.UUID, error) {
+	const op = "service.role.GetEntityID"
+
+	logger := s.logger.With(
+		zap.String("op", op),
+		zap.String("entity_type", entityType),
+	)
+
+	logger.Info("getting entity ID by type")
+
+	// Получаем ID из storage слоя
+	id, err := s.roleInfoManage.GetEntityID(ctx, entityType)
+	if err != nil {
+		if errors.Is(err, ssoerrors.ErrEntityNotFound) {
+			logger.Warn("entity not found",
+				zap.Error(ssoerrors.ErrEntityNotFound),
+			)
+			return uuid.Nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrEntityNotFound)
+		}
+
+		logger.Error("failed to get entity ID",
+			zap.Error(err),
+		)
+		return uuid.Nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
+	}
+
+	logger.Debug("successfully got entity ID",
+		zap.String("entity_id", id.String()),
+	)
+	return id, nil
 }
 
 // GetUserRelations возвращает все связи пользователя
