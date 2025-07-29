@@ -294,3 +294,33 @@ func (s *UserService) UpdateUserPassword(
 	)
 	return nil
 }
+
+// Добавляем в UserService
+func (s *UserService) GetAllUsers(
+	ctx context.Context,
+	limit, offset int,
+) (*[]models.User, error) {
+	const op = "service.user.GetAllUsers"
+
+	logger := s.logger.With(
+		zap.String("op", op),
+	)
+
+	logger.Info("getting all users")
+
+	users, err := s.userGet.GetListUsers(ctx, limit, offset)
+	if err != nil {
+		logger.Error("failed to get users", zap.Error(err))
+		return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrInternal)
+	}
+
+	// Скрываем хеши паролей
+	for i := range *users {
+		(*users)[i].PasswordHash = ""
+	}
+
+	logger.Debug("Successfully got users list",
+		zap.Int("count", len(*users)),
+	)
+	return users, nil
+}

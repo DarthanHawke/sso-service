@@ -19,6 +19,7 @@ type User interface {
 	Register(ctx context.Context, fullName, email, password string) (uuid.UUID, error)
 	Login(ctx context.Context, email, password string) (uuid.UUID, error)
 	GetProfile(ctx context.Context, userID uuid.UUID) (*models.User, error)
+	GetAllUsers(ctx context.Context, limit, offset int) (*[]models.User, error)
 	UpdateUserName(ctx context.Context, userID uuid.UUID, fulName string) error
 	UpdateUserEmail(ctx context.Context, userID uuid.UUID, email string) error
 	UpdateUserPassword(ctx context.Context, userID uuid.UUID, password string) error
@@ -91,6 +92,23 @@ func (s *UserServerAPI) GetProfile(
 	}
 
 	return &ssogrpc.GetProfileResponse{User: convertUserToProto(userProfile)}, nil
+}
+
+func (s *UserServerAPI) GetAllUsers(
+	ctx context.Context,
+	req *ssogrpc.GetAllUsersRequest,
+) (*ssogrpc.GetAllUsersResponse, error) {
+	users, err := s.user.GetAllUsers(ctx, int(req.GetLimit()), int(req.GetOffset()))
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to get users")
+	}
+
+	protoUsers := make([]*ssogrpc.User, 0, len(*users))
+	for _, user := range *users {
+		protoUsers = append(protoUsers, convertUserToProto(&user))
+	}
+
+	return &ssogrpc.GetAllUsersResponse{Users: protoUsers}, nil
 }
 
 func (s *UserServerAPI) UpdateUserName(

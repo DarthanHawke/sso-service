@@ -133,12 +133,12 @@ func (userDB *UserDataBase) GetListUsers(ctx context.Context, limit, offset int)
 	var users []models.User
 	err := userDB.db.SelectContext(ctx, &users, `
         SELECT 
-        	email, 
-			password_hash, 
-			full_name, 
-			is_active, 
-			created_at, 
-			updated_at 
+            id,
+            email, 
+            full_name, 
+            is_active, 
+            created_at, 
+            updated_at 
         FROM users 
         WHERE deleted_at IS NULL
         ORDER BY created_at DESC

@@ -83,17 +83,23 @@ func (roleDB *RoleDataBase) checkPermissionPaths(
 }
 
 // CreateEntity создает новую сущность
-func (roleDB *RoleDataBase) CreateEntity(ctx context.Context, entityType string) error {
+func (roleDB *RoleDataBase) CreateEntity(ctx context.Context, entityType string) (uuid.UUID, error) {
 	const op = "storage.role.CreateEntity"
 
-	return roleDB.db.WithTransaction(ctx, func(tx *sqlx.Tx) error {
-		query := `INSERT INTO entities (type) VALUES ($1)`
-		_, err := tx.ExecContext(ctx, query, entityType)
+	var id uuid.UUID
+	err := roleDB.db.WithTransaction(ctx, func(tx *sqlx.Tx) error {
+		query := `INSERT INTO entities (type) VALUES ($1) RETURNING id`
+		err := tx.GetContext(ctx, &id, query, entityType)
 		if err != nil {
-			return fmt.Errorf("failed to create entity: %s: %w", op, err)
+			return fmt.Errorf("%s: failed to create entity: %w", op, err)
 		}
 		return nil
 	})
+
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("%s: %w", op, err)
+	}
+	return id, nil
 }
 
 // CreateEntity создает новую сущность
@@ -336,6 +342,19 @@ func (roleDB *RoleDataBase) RevokePermission(ctx context.Context, permissionID u
 
 		return nil
 	})
+}
+
+// GetAllEntities возвращает все сущности в системе
+func (roleDB *RoleDataBase) GetAllEntities(ctx context.Context) (*[]models.Entity, error) {
+	const op = "storage.role.GetAllEntities"
+
+	var entities []models.Entity
+	query := `SELECT id, type FROM entities`
+	err := roleDB.db.SelectContext(ctx, &entities, query)
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to get all entities: %w", op, err)
+	}
+	return &entities, nil
 }
 
 // GetAllPermissions возвращает все разрешения в системе

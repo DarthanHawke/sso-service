@@ -3,7 +3,7 @@ module sso-service
 go 1.23.6
 
 require (
-	github.com/DarthanHawke/protos-payment-system v0.7.1
+	github.com/DarthanHawke/protos-payment-system v0.8.3
 	github.com/golang-jwt/jwt/v5 v5.2.3
 	github.com/golang-migrate/migrate/v4 v4.18.3
 	github.com/google/uuid v1.6.0

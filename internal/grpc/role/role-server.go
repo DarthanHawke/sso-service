@@ -15,7 +15,8 @@ import (
 )
 
 type Role interface {
-	CreateEntity(ctx context.Context, id uuid.UUID, entityType string) error
+	CreateEntity(ctx context.Context, entityType string) (uuid.UUID, error)
+	CreateEntityWithID(ctx context.Context, id uuid.UUID, entityType string) error
 	DeleteEntity(ctx context.Context, id uuid.UUID) error
 	CreateRelation(ctx context.Context, sourceID, targetID uuid.UUID, relationType string) error
 	DeleteRelation(ctx context.Context, sourceID, targetID uuid.UUID, relationType string) error
@@ -25,6 +26,7 @@ type Role interface {
 	CheckPermission(ctx context.Context, subjectID, objectID uuid.UUID, permissionName string) (bool, error)
 	GetPermissionByName(ctx context.Context, name string) (*models.Permission, error)
 	GetEntityID(ctx context.Context, entityType string) (uuid.UUID, error)
+	GetAllEntities(ctx context.Context) (*[]models.Entity, error)
 	GetAllPermissions(ctx context.Context) (*[]models.Permission, error)
 	GetUserRelations(ctx context.Context, userID uuid.UUID) (*[]models.Relation, error)
 	GetUserPermissions(ctx context.Context, userID uuid.UUID) (*[]models.Permission, error)
@@ -44,6 +46,21 @@ func NewRoleServer(gRPC *grpc.Server, role Role) {
 func (s *RoleServerAPI) CreateEntity(
 	ctx context.Context,
 	req *ssogrpc.CreateEntityRequest,
+) (*ssogrpc.CreateEntityResponse, error) {
+	if req.GetEntityType() == "" {
+		return nil, status.Error(codes.InvalidArgument, "entity type is required")
+	}
+
+	entityID, err := s.role.CreateEntity(ctx, req.GetEntityType())
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to create entity")
+	}
+	return &ssogrpc.CreateEntityResponse{Id: &ssogrpc.UUID{Value: entityID.String()}}, nil
+}
+
+func (s *RoleServerAPI) CreateEntityWithID(
+	ctx context.Context,
+	req *ssogrpc.CreateEntityWithIDRequest,
 ) (*emptypb.Empty, error) {
 	if req.GetEntityType() == "" {
 		return nil, status.Error(codes.InvalidArgument, "entity type is required")
@@ -52,7 +69,7 @@ func (s *RoleServerAPI) CreateEntity(
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
 	}
-	err = s.role.CreateEntity(ctx, id, req.GetEntityType())
+	err = s.role.CreateEntityWithID(ctx, id, req.GetEntityType())
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to create entity")
 	}
@@ -242,6 +259,20 @@ func (s *RoleServerAPI) GetEntityId(
 	}, nil
 }
 
+func (s *RoleServerAPI) GetAllEntities(
+	ctx context.Context,
+	_ *emptypb.Empty,
+) (*ssogrpc.GetAllEntitiesResponse, error) {
+	entities, err := s.role.GetAllEntities(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to get entities")
+	}
+
+	return &ssogrpc.GetAllEntitiesResponse{
+		Entities: convertEntitiesToProto(entities),
+	}, nil
+}
+
 func (s *RoleServerAPI) GetAllPermissions(
 	ctx context.Context,
 	_ *emptypb.Empty,
@@ -377,4 +408,20 @@ func convertRelationToProto(r *models.Relation) *ssogrpc.Relation {
 		TargetId:     &ssogrpc.UUID{Value: r.TargetID.String()},
 		RelationType: r.RelationType,
 	}
+}
+
+func convertEntitiesToProto(e *[]models.Entity) []*ssogrpc.Entity {
+	if e == nil {
+		return nil
+	}
+
+	var entities []*ssogrpc.Entity
+	for _, entity := range *e {
+		entities = append(entities, &ssogrpc.Entity{
+			Id:   &ssogrpc.UUID{Value: entity.ID.String()},
+			Type: entity.Type,
+		})
+	}
+
+	return entities
 }
