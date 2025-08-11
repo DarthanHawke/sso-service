@@ -98,7 +98,7 @@ func (sessionDB *SessionDataBase) GetSessionByToken(
 func (sessionDB *SessionDataBase) GetUserSessions(
 	ctx context.Context,
 	userID uuid.UUID,
-) (*[]models.Session, error) {
+) ([]models.Session, error) {
 	const op = "storage.session.GetUserSessions"
 
 	var sessions []models.Session
@@ -117,7 +117,7 @@ func (sessionDB *SessionDataBase) GetUserSessions(
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
-	return &sessions, nil
+	return sessions, nil
 }
 
 // DeleteSession удаляет конкретную сессию по ID

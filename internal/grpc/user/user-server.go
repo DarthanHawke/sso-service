@@ -19,7 +19,7 @@ type User interface {
 	Register(ctx context.Context, fullName, email, password string) (uuid.UUID, error)
 	Login(ctx context.Context, email, password string) (uuid.UUID, error)
 	GetProfile(ctx context.Context, userID uuid.UUID) (*models.User, error)
-	GetAllUsers(ctx context.Context, limit, offset int) (*[]models.User, error)
+	GetAllUsers(ctx context.Context, limit, offset int) ([]models.User, error)
 	UpdateUserName(ctx context.Context, userID uuid.UUID, fulName string) error
 	UpdateUserEmail(ctx context.Context, userID uuid.UUID, email string) error
 	UpdateUserPassword(ctx context.Context, userID uuid.UUID, password string) error
@@ -86,12 +86,20 @@ func (s *UserServerAPI) GetProfile(
 		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
 	}
 
-	userProfile, err := s.user.GetProfile(ctx, userID)
+	user, err := s.user.GetProfile(ctx, userID)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to get user")
 	}
 
-	return &ssogrpc.GetProfileResponse{User: convertUserToProto(userProfile)}, nil
+	return &ssogrpc.GetProfileResponse{
+		User: &ssogrpc.User{
+			Id:        &ssogrpc.UUID{Value: user.ID.String()},
+			Email:     user.Email,
+			FullName:  user.FullName,
+			CreatedAt: timestamppb.New(user.CreatedAt),
+			UpdatedAt: timestamppb.New(user.UpdatedAt),
+		},
+	}, nil
 }
 
 func (s *UserServerAPI) GetAllUsers(
@@ -103,15 +111,21 @@ func (s *UserServerAPI) GetAllUsers(
 		return nil, status.Error(codes.Internal, "failed to get users")
 	}
 
-	protoUsers := make([]*ssogrpc.User, 0, len(*users))
-	for _, user := range *users {
-		protoUsers = append(protoUsers, convertUserToProto(&user))
+	protoUsers := make([]*ssogrpc.User, 0, len(users))
+	for _, user := range users {
+		protoUsers = append(protoUsers, &ssogrpc.User{
+			Id:        &ssogrpc.UUID{Value: user.ID.String()},
+			Email:     user.Email,
+			FullName:  user.FullName,
+			CreatedAt: timestamppb.New(user.CreatedAt),
+			UpdatedAt: timestamppb.New(user.UpdatedAt),
+		})
 	}
 
 	return &ssogrpc.GetAllUsersResponse{Users: protoUsers}, nil
 }
 
-func (s *UserServerAPI) UpdateUserName(
+func (s *UserServerAPI) UpdateName(
 	ctx context.Context,
 	req *ssogrpc.UpdateNameRequest,
 ) (*emptypb.Empty, error) {
@@ -132,7 +146,7 @@ func (s *UserServerAPI) UpdateUserName(
 	return nil, nil
 }
 
-func (s *UserServerAPI) UpdateUserEmail(
+func (s *UserServerAPI) UpdateEmail(
 	ctx context.Context,
 	req *ssogrpc.UpdateEmailRequest,
 ) (*emptypb.Empty, error) {
@@ -153,7 +167,7 @@ func (s *UserServerAPI) UpdateUserEmail(
 	return nil, nil
 }
 
-func (s *UserServerAPI) UpdateUserPassword(
+func (s *UserServerAPI) UpdatePassword(
 	ctx context.Context,
 	req *ssogrpc.UpdatePasswordRequest,
 ) (*emptypb.Empty, error) {
@@ -172,17 +186,4 @@ func (s *UserServerAPI) UpdateUserPassword(
 	}
 
 	return nil, nil
-}
-
-func convertUserToProto(u *models.User) (user *ssogrpc.User) {
-	if u == nil {
-		return nil
-	}
-	return &ssogrpc.User{
-		Id:        &ssogrpc.UUID{Value: u.ID.String()},
-		Email:     u.Email,
-		FullName:  u.FullName,
-		CreatedAt: timestamppb.New(u.CreatedAt),
-		UpdatedAt: timestamppb.New(u.UpdatedAt),
-	}
 }

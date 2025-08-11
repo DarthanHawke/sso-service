@@ -18,7 +18,7 @@ type Session interface {
 	RefreshSession(ctx context.Context, userID uuid.UUID, refreshToken string) (*models.UserSession, error)
 	Logout(ctx context.Context, userID, sessionID uuid.UUID) error
 	LogoutAll(ctx context.Context, userID uuid.UUID) error
-	GetUserSessions(ctx context.Context, userID uuid.UUID) (*[]models.Session, error)
+	GetUserSessions(ctx context.Context, userID uuid.UUID) ([]models.Session, error)
 }
 
 type SessionServerAPI struct {
@@ -121,35 +121,19 @@ func (s *SessionServerAPI) GetAll(
 		return nil, status.Errorf(codes.InvalidArgument, "invalid UUID format: %v", err)
 	}
 
-	sessionsID, err := s.session.GetUserSessions(ctx, userID)
+	sessions, err := s.session.GetUserSessions(ctx, userID)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to logout")
 	}
 
-	return &ssogrpc.GetAllResponse{Session: convertSessionsToProto(sessionsID)}, nil
-}
-
-func convertSessionsToProto(s *[]models.Session) []*ssogrpc.Session {
-	if s == nil {
-		return nil
+	protoSessnions := make([]*ssogrpc.Session, 0, len(sessions))
+	for _, session := range sessions {
+		protoSessnions = append(protoSessnions, &ssogrpc.Session{
+			Id:        &ssogrpc.UUID{Value: session.ID.String()},
+			UserId:    &ssogrpc.UUID{Value: session.UserID.String()},
+			ExpiresAt: timestamppb.New(session.ExpiresAt),
+		})
 	}
 
-	var sessnions []*ssogrpc.Session
-	for _, session := range *s {
-		sessnions = append(sessnions, convertSessionToProto(&session))
-	}
-
-	return sessnions
-}
-
-func convertSessionToProto(s *models.Session) *ssogrpc.Session {
-	if s == nil {
-		return nil
-	}
-
-	return &ssogrpc.Session{
-		Id:        &ssogrpc.UUID{Value: s.ID.String()},
-		UserId:    &ssogrpc.UUID{Value: s.UserID.String()},
-		ExpiresAt: timestamppb.New(s.ExpiresAt),
-	}
+	return &ssogrpc.GetAllResponse{Session: protoSessnions}, nil
 }

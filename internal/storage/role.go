@@ -345,7 +345,7 @@ func (roleDB *RoleDataBase) RevokePermission(ctx context.Context, permissionID u
 }
 
 // GetAllEntities возвращает все сущности в системе
-func (roleDB *RoleDataBase) GetAllEntities(ctx context.Context) (*[]models.Entity, error) {
+func (roleDB *RoleDataBase) GetAllEntities(ctx context.Context) ([]models.Entity, error) {
 	const op = "storage.role.GetAllEntities"
 
 	var entities []models.Entity
@@ -354,11 +354,11 @@ func (roleDB *RoleDataBase) GetAllEntities(ctx context.Context) (*[]models.Entit
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed to get all entities: %w", op, err)
 	}
-	return &entities, nil
+	return entities, nil
 }
 
 // GetAllPermissions возвращает все разрешения в системе
-func (roleDB *RoleDataBase) GetAllPermissions(ctx context.Context) (*[]models.Permission, error) {
+func (roleDB *RoleDataBase) GetAllPermissions(ctx context.Context) ([]models.Permission, error) {
 	const op = "storage.role.GetAllPermissions"
 
 	var permissions []models.Permission
@@ -367,7 +367,7 @@ func (roleDB *RoleDataBase) GetAllPermissions(ctx context.Context) (*[]models.Pe
 	if err != nil {
 		return nil, fmt.Errorf("failed to get all permissions: %s: %w", op, err)
 	}
-	return &permissions, nil
+	return permissions, nil
 }
 
 // GetEntityID возвращает ID сущности по её типу
@@ -388,20 +388,20 @@ func (roleDB *RoleDataBase) GetEntityID(ctx context.Context, entityType string) 
 }
 
 // GetUserRelations возвращает все отношения пользователя
-func (roleDB *RoleDataBase) GetUserRelations(ctx context.Context, userID uuid.UUID) (*[]models.Relation, error) {
+func (roleDB *RoleDataBase) GetUserRelations(ctx context.Context, userID uuid.UUID) ([]models.Relation, error) {
 	const op = "storage.role.GetUserRelations"
 
 	var relations []models.Relation
 	query := `
 		SELECT id, source_id, target_id, relation_type, created_at 
 		FROM relations 
-		WHERE source_id = $1
+		WHERE source_id = $1 OR target_id = $1
 	`
 	err := roleDB.db.SelectContext(ctx, &relations, query, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user relations: %s: %w", op, err)
 	}
-	return &relations, nil
+	return relations, nil
 }
 
 // GetPermissionByCode возвращает разрешение по name
@@ -428,7 +428,7 @@ func (roleDB *RoleDataBase) GetPermissionByName(
 func (roleDB *RoleDataBase) GetPermissionsForRelationType(
 	ctx context.Context,
 	relationType string,
-) (*[]models.Permission, error) {
+) ([]models.Permission, error) {
 	const op = "storage.role.GetPermissionsForRelationType"
 
 	var permissions []models.Permission
@@ -442,11 +442,11 @@ func (roleDB *RoleDataBase) GetPermissionsForRelationType(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get permissions for relation type: %s: %w", op, err)
 	}
-	return &permissions, nil
+	return permissions, nil
 }
 
 // GetUserPermissions возвращает все разрешения пользователя
-func (roleDB *RoleDataBase) GetUserPermissions(ctx context.Context, userID uuid.UUID) (*[]models.Permission, error) {
+func (roleDB *RoleDataBase) GetUserPermissions(ctx context.Context, userID uuid.UUID) ([]models.Permission, error) {
 	const op = "storage.role.GetUserPermissions"
 
 	query := `
@@ -463,11 +463,11 @@ func (roleDB *RoleDataBase) GetUserPermissions(ctx context.Context, userID uuid.
 		return nil, fmt.Errorf("failed to get user permissions: %s: %w", op, err)
 	}
 
-	return &permissions, nil
+	return permissions, nil
 }
 
 // GetEntityRelations возвращает все отношения для сущности
-func (roleDB *RoleDataBase) GetEntityRelations(ctx context.Context, entityID uuid.UUID) (*[]models.Relation, error) {
+func (roleDB *RoleDataBase) GetEntityRelations(ctx context.Context, entityID uuid.UUID) ([]models.Relation, error) {
 	const op = "storage.role.GetEntityRelations"
 
 	query := `
@@ -482,5 +482,5 @@ func (roleDB *RoleDataBase) GetEntityRelations(ctx context.Context, entityID uui
 		return nil, fmt.Errorf("failed to get entity relations: %s: %w", op, err)
 	}
 
-	return &relations, nil
+	return relations, nil
 }

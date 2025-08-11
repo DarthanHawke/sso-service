@@ -32,7 +32,7 @@ type UserUpdate interface {
 type UserGet interface {
 	GetUserByID(ctx context.Context, userID uuid.UUID) (*models.User, error)
 	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
-	GetListUsers(ctx context.Context, limit, offset int) (*[]models.User, error)
+	GetListUsers(ctx context.Context, limit, offset int) ([]models.User, error)
 }
 
 type UserService struct {
@@ -299,7 +299,7 @@ func (s *UserService) UpdateUserPassword(
 func (s *UserService) GetAllUsers(
 	ctx context.Context,
 	limit, offset int,
-) (*[]models.User, error) {
+) ([]models.User, error) {
 	const op = "service.user.GetAllUsers"
 
 	logger := s.logger.With(
@@ -315,12 +315,12 @@ func (s *UserService) GetAllUsers(
 	}
 
 	// Скрываем хеши паролей
-	for i := range *users {
-		(*users)[i].PasswordHash = ""
+	for i := range users {
+		(users)[i].PasswordHash = ""
 	}
 
 	logger.Debug("Successfully got users list",
-		zap.Int("count", len(*users)),
+		zap.Int("count", len(users)),
 	)
 	return users, nil
 }

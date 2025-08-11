@@ -39,7 +39,7 @@ type SessionManage interface {
 
 type SessionGet interface {
 	GetSessionByToken(ctx context.Context, refreshToken string) (*models.Session, error)
-	GetUserSessions(ctx context.Context, userID uuid.UUID) (*[]models.Session, error)
+	GetUserSessions(ctx context.Context, userID uuid.UUID) ([]models.Session, error)
 }
 
 type SessionService struct {
@@ -225,7 +225,7 @@ func (s *SessionService) LogoutAll(ctx context.Context, userID uuid.UUID) error 
 }
 
 // LogoutAll - выход со всех устройств
-func (s *SessionService) GetUserSessions(ctx context.Context, userID uuid.UUID) (*[]models.Session, error) {
+func (s *SessionService) GetUserSessions(ctx context.Context, userID uuid.UUID) ([]models.Session, error) {
 	const op = "service.session.GetAllSessions"
 
 	logger := s.logger.With(

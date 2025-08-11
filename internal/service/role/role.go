@@ -26,12 +26,12 @@ type RoleInfoManage interface {
 	CheckPermission(ctx context.Context, subjectID, objectID uuid.UUID, permissionName string) (bool, error)
 	GetPermissionByName(ctx context.Context, name string) (*models.Permission, error)
 	GetEntityID(ctx context.Context, entityType string) (uuid.UUID, error)
-	GetAllEntities(ctx context.Context) (*[]models.Entity, error)
-	GetAllPermissions(ctx context.Context) (*[]models.Permission, error)
-	GetUserRelations(ctx context.Context, userID uuid.UUID) (*[]models.Relation, error)
-	GetUserPermissions(ctx context.Context, userID uuid.UUID) (*[]models.Permission, error)
-	GetPermissionsForRelationType(ctx context.Context, relationType string) (*[]models.Permission, error)
-	GetEntityRelations(ctx context.Context, entityID uuid.UUID) (*[]models.Relation, error)
+	GetAllEntities(ctx context.Context) ([]models.Entity, error)
+	GetAllPermissions(ctx context.Context) ([]models.Permission, error)
+	GetUserRelations(ctx context.Context, userID uuid.UUID) ([]models.Relation, error)
+	GetUserPermissions(ctx context.Context, userID uuid.UUID) ([]models.Permission, error)
+	GetPermissionsForRelationType(ctx context.Context, relationType string) ([]models.Permission, error)
+	GetEntityRelations(ctx context.Context, entityID uuid.UUID) ([]models.Relation, error)
 }
 
 type RoleService struct {
@@ -406,7 +406,7 @@ func (s *RoleService) GetPermissionByName(
 // GetAllEntities возвращает все сущности в системе
 func (s *RoleService) GetAllEntities(
 	ctx context.Context,
-) (*[]models.Entity, error) {
+) ([]models.Entity, error) {
 	const op = "service.role.GetAllEntities"
 
 	logger := s.logger.With(
@@ -424,7 +424,7 @@ func (s *RoleService) GetAllEntities(
 	}
 
 	logger.Debug("Successfully retrieved all entities",
-		zap.Int("count", len(*entities)),
+		zap.Int("count", len(entities)),
 	)
 	return entities, nil
 }
@@ -432,7 +432,7 @@ func (s *RoleService) GetAllEntities(
 // GetAllPermissions возвращает все разрешения в системе
 func (s *RoleService) GetAllPermissions(
 	ctx context.Context,
-) (*[]models.Permission, error) {
+) ([]models.Permission, error) {
 	const op = "service.role.GetAllPermissions"
 
 	logger := s.logger.With(
@@ -450,7 +450,7 @@ func (s *RoleService) GetAllPermissions(
 	}
 
 	logger.Debug("Successfully retrieved all permissions",
-		zap.Int("count", len(*permissions)),
+		zap.Int("count", len(permissions)),
 	)
 	return permissions, nil
 }
@@ -495,7 +495,7 @@ func (s *RoleService) GetEntityID(
 func (s *RoleService) GetUserRelations(
 	ctx context.Context,
 	userID uuid.UUID,
-) (*[]models.Relation, error) {
+) ([]models.Relation, error) {
 	const op = "service.role.GetUserRelations"
 
 	logger := s.logger.With(
@@ -514,7 +514,7 @@ func (s *RoleService) GetUserRelations(
 	}
 
 	logger.Debug("Successfully retrieved user relations",
-		zap.Int("count", len(*relations)),
+		zap.Int("count", len(relations)),
 	)
 	return relations, nil
 }
@@ -523,7 +523,7 @@ func (s *RoleService) GetUserRelations(
 func (s *RoleService) GetUserPermissions(
 	ctx context.Context,
 	userID uuid.UUID,
-) (*[]models.Permission, error) {
+) ([]models.Permission, error) {
 	const op = "service.role.GetUserPermissions"
 
 	logger := s.logger.With(
@@ -542,7 +542,7 @@ func (s *RoleService) GetUserPermissions(
 	}
 
 	logger.Debug("Successfully retrieved user permissions",
-		zap.Int("count", len(*permissions)),
+		zap.Int("count", len(permissions)),
 	)
 	return permissions, nil
 }
@@ -551,7 +551,7 @@ func (s *RoleService) GetUserPermissions(
 func (s *RoleService) GetPermissionsForRelationType(
 	ctx context.Context,
 	relationType string,
-) (*[]models.Permission, error) {
+) ([]models.Permission, error) {
 	const op = "service.role.GetPermissionsForRelationType"
 
 	logger := s.logger.With(
@@ -570,7 +570,7 @@ func (s *RoleService) GetPermissionsForRelationType(
 	}
 
 	logger.Debug("Successfully retrieved permissions for relation type",
-		zap.Int("count", len(*permissions)),
+		zap.Int("count", len(permissions)),
 	)
 	return permissions, nil
 }
@@ -579,7 +579,7 @@ func (s *RoleService) GetPermissionsForRelationType(
 func (s *RoleService) GetEntityRelations(
 	ctx context.Context,
 	entityID uuid.UUID,
-) (*[]models.Relation, error) {
+) ([]models.Relation, error) {
 	const op = "service.role.GetEntityRelations"
 
 	logger := s.logger.With(
@@ -598,7 +598,7 @@ func (s *RoleService) GetEntityRelations(
 	}
 
 	logger.Debug("Successfully retrieved entity relations",
-		zap.Int("count", len(*relations)),
+		zap.Int("count", len(relations)),
 	)
 	return relations, nil
 }

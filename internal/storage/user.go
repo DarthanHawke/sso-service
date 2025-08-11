@@ -2,8 +2,6 @@ package storage
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	ssoerrors "sso-service/internal/lib/errors"
 	"sso-service/internal/models"
@@ -62,30 +60,18 @@ func (userDB *UserDataBase) CreateUser(ctx context.Context, email, passwordHash,
 func (userDB *UserDataBase) GetUserByID(ctx context.Context, userID uuid.UUID) (*models.User, error) {
 	const op = "storage.user.GetUserByID"
 
-	stmt, err := userDB.db.Prepare(`
-		SELECT 
-			id,
-			email, 
-			password_hash, 
-			full_name, 
-			created_at, 
-			updated_at 
-		FROM users WHERE id = $1
-	`)
-
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
-	}
-
-	row := stmt.QueryRowContext(ctx, userID)
-
 	var user models.User
-	err = row.Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FullName, &user.CreatedAt, &user.UpdatedAt)
+	err := userDB.db.GetContext(ctx, &user, `
+        SELECT 
+            id,
+            email, 
+			password_hash,
+            full_name, 
+            created_at, 
+            updated_at 
+        FROM users WHERE id = $1
+    `, userID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrUserNotFound)
-		}
-
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
@@ -96,30 +82,18 @@ func (userDB *UserDataBase) GetUserByID(ctx context.Context, userID uuid.UUID) (
 func (userDB *UserDataBase) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
 	const op = "storage.user.GetUserByEmail"
 
-	stmt, err := userDB.db.Prepare(`
-		SELECT 
-			id,
-			email, 
-			password_hash, 
-			full_name, 
-			created_at, 
-			updated_at 
-		FROM users WHERE email = $1
-	`)
-
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
-	}
-
-	row := stmt.QueryRowContext(ctx, email)
-
 	var user models.User
-	err = row.Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FullName, &user.CreatedAt, &user.UpdatedAt)
+	err := userDB.db.GetContext(ctx, &user, `
+        SELECT 
+            id,
+            email, 
+			password_hash,
+            full_name, 
+            created_at, 
+            updated_at 
+        FROM users WHERE email = $1
+    `, email)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("%s: %w", op, ssoerrors.ErrUserNotFound)
-		}
-
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
@@ -127,29 +101,39 @@ func (userDB *UserDataBase) GetUserByEmail(ctx context.Context, email string) (*
 }
 
 // GetListUsers возвращает список всех пользователей
-func (userDB *UserDataBase) GetListUsers(ctx context.Context, limit, offset int) (*[]models.User, error) {
+func (userDB *UserDataBase) GetListUsers(ctx context.Context, limit, offset int) ([]models.User, error) {
 	const op = "storage.user.GetListUsers"
 
 	var users []models.User
-	err := userDB.db.SelectContext(ctx, &users, `
+
+	query := `
         SELECT 
             id,
             email, 
             full_name, 
-            is_active, 
             created_at, 
             updated_at 
         FROM users 
         WHERE deleted_at IS NULL
         ORDER BY created_at DESC
-        LIMIT $1 OFFSET $2
-    `, limit, offset)
+    `
 
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
+	// Если limit > 0, добавляем LIMIT и OFFSET
+	if limit > 0 {
+		query += " LIMIT $1 OFFSET $2"
+		err := userDB.db.SelectContext(ctx, &users, query, limit, offset)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", op, err)
+		}
+	} else {
+		// Если limit не указан, выполняем запрос без ограничений
+		err := userDB.db.SelectContext(ctx, &users, query)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", op, err)
+		}
 	}
 
-	return &users, nil
+	return users, nil
 }
 
 // UpdateUser обновляет email и/или fullName пользователя models.User, используя userID

@@ -26,12 +26,12 @@ type Role interface {
 	CheckPermission(ctx context.Context, subjectID, objectID uuid.UUID, permissionName string) (bool, error)
 	GetPermissionByName(ctx context.Context, name string) (*models.Permission, error)
 	GetEntityID(ctx context.Context, entityType string) (uuid.UUID, error)
-	GetAllEntities(ctx context.Context) (*[]models.Entity, error)
-	GetAllPermissions(ctx context.Context) (*[]models.Permission, error)
-	GetUserRelations(ctx context.Context, userID uuid.UUID) (*[]models.Relation, error)
-	GetUserPermissions(ctx context.Context, userID uuid.UUID) (*[]models.Permission, error)
-	GetPermissionsForRelationType(ctx context.Context, relationType string) (*[]models.Permission, error)
-	GetEntityRelations(ctx context.Context, entityID uuid.UUID) (*[]models.Relation, error)
+	GetAllEntities(ctx context.Context) ([]models.Entity, error)
+	GetAllPermissions(ctx context.Context) ([]models.Permission, error)
+	GetUserRelations(ctx context.Context, userID uuid.UUID) ([]models.Relation, error)
+	GetUserPermissions(ctx context.Context, userID uuid.UUID) ([]models.Permission, error)
+	GetPermissionsForRelationType(ctx context.Context, relationType string) ([]models.Permission, error)
+	GetEntityRelations(ctx context.Context, entityID uuid.UUID) ([]models.Relation, error)
 }
 
 type RoleServerAPI struct {
@@ -234,7 +234,11 @@ func (s *RoleServerAPI) GetPermissionByName(
 	}
 
 	return &ssogrpc.GetPermissionByNameResponse{
-		Permission: convertPermissionToProto(permission),
+		Permission: &ssogrpc.Permission{
+			Id:          &ssogrpc.UUID{Value: permission.ID.String()},
+			Name:        permission.Name,
+			Description: permission.Description,
+		},
 	}, nil
 }
 
@@ -268,8 +272,16 @@ func (s *RoleServerAPI) GetAllEntities(
 		return nil, status.Error(codes.Internal, "failed to get entities")
 	}
 
+	protoEntities := make([]*ssogrpc.Entity, 0, len(entities))
+	for _, entity := range entities {
+		protoEntities = append(protoEntities, &ssogrpc.Entity{
+			Id:   &ssogrpc.UUID{Value: entity.ID.String()},
+			Type: entity.Type,
+		})
+	}
+
 	return &ssogrpc.GetAllEntitiesResponse{
-		Entities: convertEntitiesToProto(entities),
+		Entities: protoEntities,
 	}, nil
 }
 
@@ -282,9 +294,16 @@ func (s *RoleServerAPI) GetAllPermissions(
 		return nil, status.Error(codes.Internal, "failed to get permissions")
 	}
 
-	return &ssogrpc.GetAllPermissionsResponse{
-		Permissions: convertPermissionsToProto(permissions),
-	}, nil
+	protoPermissions := make([]*ssogrpc.Permission, 0, len(permissions))
+	for _, permission := range permissions {
+		protoPermissions = append(protoPermissions, &ssogrpc.Permission{
+			Id:          &ssogrpc.UUID{Value: permission.ID.String()},
+			Name:        permission.Name,
+			Description: permission.Description,
+		})
+	}
+
+	return &ssogrpc.GetAllPermissionsResponse{Permissions: protoPermissions}, nil
 }
 
 func (s *RoleServerAPI) GetUserRelations(
@@ -301,9 +320,16 @@ func (s *RoleServerAPI) GetUserRelations(
 		return nil, status.Error(codes.Internal, "failed to get user relations")
 	}
 
-	return &ssogrpc.GetUserRelationsResponse{
-		Relations: convertRelationsToProto(relations),
-	}, nil
+	protoRelations := make([]*ssogrpc.Relation, 0, len(relations))
+	for _, relation := range relations {
+		protoRelations = append(protoRelations, &ssogrpc.Relation{
+			SourceId:     &ssogrpc.UUID{Value: relation.SourceID.String()},
+			TargetId:     &ssogrpc.UUID{Value: relation.TargetID.String()},
+			RelationType: relation.RelationType,
+		})
+	}
+
+	return &ssogrpc.GetUserRelationsResponse{Relations: protoRelations}, nil
 }
 
 func (s *RoleServerAPI) GetUserPermissions(
@@ -320,8 +346,17 @@ func (s *RoleServerAPI) GetUserPermissions(
 		return nil, status.Error(codes.Internal, "failed to get user permissions")
 	}
 
+	protoPermissions := make([]*ssogrpc.Permission, 0, len(permissions))
+	for _, permission := range permissions {
+		protoPermissions = append(protoPermissions, &ssogrpc.Permission{
+			Id:          &ssogrpc.UUID{Value: permission.ID.String()},
+			Name:        permission.Name,
+			Description: permission.Description,
+		})
+	}
+
 	return &ssogrpc.GetUserPermissionsResponse{
-		Permissions: convertPermissionsToProto(permissions),
+		Permissions: protoPermissions,
 	}, nil
 }
 
@@ -338,8 +373,17 @@ func (s *RoleServerAPI) GetPermissionsForRelationType(
 		return nil, status.Error(codes.Internal, "failed to get permissions for relation type")
 	}
 
+	protoPermissions := make([]*ssogrpc.Permission, 0, len(permissions))
+	for _, permission := range permissions {
+		protoPermissions = append(protoPermissions, &ssogrpc.Permission{
+			Id:          &ssogrpc.UUID{Value: permission.ID.String()},
+			Name:        permission.Name,
+			Description: permission.Description,
+		})
+	}
+
 	return &ssogrpc.GetPermissionsForRelationTypeResponse{
-		Permissions: convertPermissionsToProto(permissions),
+		Permissions: protoPermissions,
 	}, nil
 }
 
@@ -357,71 +401,14 @@ func (s *RoleServerAPI) GetEntityRelations(
 		return nil, status.Error(codes.Internal, "failed to get entity relations")
 	}
 
-	return &ssogrpc.GetEntityRelationsResponse{
-		Relations: convertRelationsToProto(relations),
-	}, nil
-}
-
-func convertPermissionsToProto(p *[]models.Permission) []*ssogrpc.Permission {
-	if p == nil {
-		return nil
-	}
-
-	var permissions []*ssogrpc.Permission
-	for _, permission := range *p {
-		permissions = append(permissions, convertPermissionToProto(&permission))
-	}
-
-	return permissions
-}
-
-func convertPermissionToProto(p *models.Permission) *ssogrpc.Permission {
-	if p == nil {
-		return nil
-	}
-	return &ssogrpc.Permission{
-		Id:          &ssogrpc.UUID{Value: p.ID.String()},
-		Name:        p.Name,
-		Description: p.Description,
-	}
-}
-
-func convertRelationsToProto(r *[]models.Relation) []*ssogrpc.Relation {
-	if r == nil {
-		return nil
-	}
-
-	var relations []*ssogrpc.Relation
-	for _, relation := range *r {
-		relations = append(relations, convertRelationToProto(&relation))
-	}
-
-	return relations
-}
-
-func convertRelationToProto(r *models.Relation) *ssogrpc.Relation {
-	if r == nil {
-		return nil
-	}
-	return &ssogrpc.Relation{
-		SourceId:     &ssogrpc.UUID{Value: r.SourceID.String()},
-		TargetId:     &ssogrpc.UUID{Value: r.TargetID.String()},
-		RelationType: r.RelationType,
-	}
-}
-
-func convertEntitiesToProto(e *[]models.Entity) []*ssogrpc.Entity {
-	if e == nil {
-		return nil
-	}
-
-	var entities []*ssogrpc.Entity
-	for _, entity := range *e {
-		entities = append(entities, &ssogrpc.Entity{
-			Id:   &ssogrpc.UUID{Value: entity.ID.String()},
-			Type: entity.Type,
+	protoRelations := make([]*ssogrpc.Relation, 0, len(relations))
+	for _, relation := range relations {
+		protoRelations = append(protoRelations, &ssogrpc.Relation{
+			SourceId:     &ssogrpc.UUID{Value: relation.SourceID.String()},
+			TargetId:     &ssogrpc.UUID{Value: relation.TargetID.String()},
+			RelationType: relation.RelationType,
 		})
 	}
 
-	return entities
+	return &ssogrpc.GetEntityRelationsResponse{Relations: protoRelations}, nil
 }
