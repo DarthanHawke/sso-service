@@ -224,7 +224,7 @@ func (s *SessionService) LogoutAll(ctx context.Context, userID uuid.UUID) error 
 	return nil
 }
 
-// LogoutAll - выход со всех устройств
+// GetUserSessions - получить все сессии пользователя
 func (s *SessionService) GetUserSessions(ctx context.Context, userID uuid.UUID) ([]models.Session, error) {
 	const op = "service.session.GetAllSessions"
 

@@ -56,26 +56,34 @@ func (roleDB *RoleDataBase) checkPermissionPaths(
 	subjectID, objectID, permissionID uuid.UUID,
 ) (bool, error) {
 	query := `
-        WITH RECURSIVE access_path(source, target, relation, depth) AS (
-            --все исходящие отношения от субъекта
-            SELECT r.source_id, r.target_id, r.relation_type, 1
-            FROM relations r
-            WHERE r.source_id = $1
-            
-            UNION
-            
-            -- обход графа
-            SELECT r.source_id, r.target_id, r.relation_type, ap.depth + 1
-            FROM relations r
-            JOIN access_path ap ON r.source_id = ap.target
-            WHERE ap.depth < 6 -- Ограничение глубины
-        )
-        SELECT EXISTS(
-            SELECT 1 FROM access_path ap
-            JOIN permission_assignments pa ON pa.relation_type = ap.relation
-            WHERE ap.target = $2
-            AND pa.permission_id = $3
-        )
+		WITH RECURSIVE access_path(source, target, relation, path, depth) AS (
+			-- Находим все пути от субъекта к объекту
+			SELECT r.source_id, r.target_id, r.relation_type, ARRAY[r.source_id, r.target_id], 1
+			FROM relations r
+			WHERE r.source_id = $1
+			
+			UNION
+			
+			SELECT r.source_id, r.target_id, r.relation_type, 
+				ap.path || r.target_id, ap.depth + 1
+			FROM relations r
+			JOIN access_path ap ON r.source_id = ap.target
+			WHERE ap.depth < 6
+			AND NOT r.target_id = ANY(ap.path)
+		),
+		objects_in_path AS (
+			-- Все объекты, через которые проходит путь (включая начальный и конечный)
+			SELECT unnest(path) AS object_id FROM access_path WHERE target = $2
+		)
+		-- Проверяем только: есть ли у субъекта отношение к любому объекту в пути с нужным permission
+		SELECT EXISTS(
+			SELECT 1
+			FROM relations r
+			JOIN objects_in_path oip ON r.target_id = oip.object_id
+			JOIN permission_assignments pa ON pa.relation_type = r.relation_type
+			WHERE r.source_id = $1  -- субъект связан с объектом в пути
+			AND pa.permission_id = $3  -- у этого отношения есть нужное разрешение
+		)
     `
 	var exists bool
 	err := roleDB.db.GetContext(ctx, &exists, query, subjectID, objectID, permissionID)
@@ -177,10 +185,10 @@ func (roleDB *RoleDataBase) CreateRelation(
 
 		// Создаем отношение
 		query := `
-			INSERT INTO relations (id, source_id, target_id, relation_type)
-			VALUES ($1, $2, $3, $4)
+			INSERT INTO relations (source_id, target_id, relation_type, created_at)
+			VALUES ($1, $2, $3, NOW())
 		`
-		_, err = tx.ExecContext(ctx, query, uuid.New().String(), sourceID, targetID, relationType)
+		_, err = tx.ExecContext(ctx, query, sourceID, targetID, relationType)
 		if err != nil {
 			return fmt.Errorf("failed to create relation: %s: %w", op, err)
 		}
@@ -237,8 +245,8 @@ func (roleDB *RoleDataBase) AddPermission(ctx context.Context, name, description
 		}
 
 		query := `
-			INSERT INTO permissions (name, description)
-			VALUES ($1, $2)
+			INSERT INTO permissions (name, description, created_at)
+			VALUES ($1, $2, NOW())
 			RETURNING id
 		`
 		err = tx.GetContext(ctx, &id, query, name, description)
