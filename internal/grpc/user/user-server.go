@@ -51,6 +51,12 @@ func (s *UserServerAPI) Register(
 		if errors.Is(err, ssoerrors.ErrUserExists) {
 			return nil, status.Error(codes.AlreadyExists, "user already exists")
 		}
+		if errors.Is(err, ssoerrors.ErrInvalidEmail) {
+			return nil, status.Error(codes.InvalidArgument, ssoerrors.ErrInvalidEmail.Error())
+		}
+		if errors.Is(err, ssoerrors.ErrPasswordTooWeak) {
+			return nil, status.Error(codes.InvalidArgument, ssoerrors.ErrPasswordTooWeak.Error())
+		}
 		return nil, status.Error(codes.Internal, "failed to register user")
 	}
 

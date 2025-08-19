@@ -20,17 +20,14 @@ func IPUserAgentInterceptor(
 		if ips := md.Get("x-client-ip"); len(ips) > 0 {
 			ip = ips[0]
 		}
-
-		// Безопасное получение User-Agent
 		if agents := md.Get("x-client-agent"); len(agents) > 0 {
 			userAgent = agents[0]
 		}
-
 	}
 
 	// Добавляем в контекст
-	newCtx := context.WithValue(ctx, models.IPKey, ip)
-	newCtx = context.WithValue(newCtx, models.UserAgentKey, userAgent)
+	ctx = context.WithValue(ctx, models.IPKey, ip)
+	ctx = context.WithValue(ctx, models.UserAgentKey, userAgent)
 
-	return handler(newCtx, req)
+	return handler(ctx, req)
 }

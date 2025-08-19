@@ -131,6 +131,8 @@ func (s *SessionServerAPI) GetAll(
 		protoSessnions = append(protoSessnions, &ssogrpc.Session{
 			Id:        &ssogrpc.UUID{Value: session.ID.String()},
 			UserId:    &ssogrpc.UUID{Value: session.UserID.String()},
+			UserIp:    session.UserIP,
+			UserAgent: session.UserAgent,
 			ExpiresAt: timestamppb.New(session.ExpiresAt),
 		})
 	}
