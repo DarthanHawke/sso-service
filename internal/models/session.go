@@ -7,23 +7,13 @@ import (
 )
 
 type Session struct {
-	ID               uuid.UUID `json:"id" db:"id"`
-	UserID           uuid.UUID `json:"user_id" db:"user_id"`
-	RefreshTokenHash string    `json:"refresh_token_hash" db:"refresh_token_hash"`
-	UserIP           string    `json:"user_ip" db:"user_ip"`
-	UserAgent        string    `json:"user_agent" db:"user_agent"`
-	ExpiresAt        time.Time `json:"expires_at" db:"expires_at"`
-	CreatedAt        time.Time `json:"created_at" db:"created_at"`
+	ID               uuid.UUID  `db:"id"`
+	UserID           uuid.UUID  `db:"user_id"`
+	AppID            string     `db:"app_id"`
+	UserIP           string     `db:"user_ip"`
+	UserAgent        string     `db:"user_agent"`
+	RefreshTokenHash string     `db:"refresh_token_hash"`
+	CreatedAt        time.Time  `db:"created_at"`
+	ExpiresAt        time.Time  `db:"expires_at"`
+	LastActivityAt   *time.Time `db:"last_activity_at"`
 }
-
-type UserSession struct {
-	AcssesToken  string `json:"AcssesToken"`
-	RefreshToken string `json:"RefreshToken"`
-}
-
-type contextKey string
-
-const (
-	IPKey        contextKey = "user_ip"
-	UserAgentKey contextKey = "user_agent"
-)

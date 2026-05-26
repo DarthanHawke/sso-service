@@ -1,9 +1,9 @@
 package main
 
 import (
+	"authn-gate-service/internal/config"
+	"authn-gate-service/internal/lib/logger"
 	"os"
-	"sso-service/internal/config"
-	"sso-service/internal/lib/logger"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"

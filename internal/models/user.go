@@ -7,10 +7,13 @@ import (
 )
 
 type User struct {
-	ID           uuid.UUID `json:"id" db:"id"`
-	Email        string    `json:"email" db:"email"`
-	PasswordHash string    `json:"-" db:"password_hash"`
-	FullName     string    `json:"full_name" db:"full_name"`
-	CreatedAt    time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
+	ID            uuid.UUID  `db:"id"`
+	Email         string     `db:"email"`
+	EmailVerified bool       `db:"email_verified"`
+	FullName      string     `db:"full_name"`
+	Disabled      bool       `db:"disabled"`
+	PasswordHash  string     `db:"password_hash"`
+	CreatedAt     time.Time  `db:"created_at"`
+	UpdatedAt     time.Time  `db:"updated_at"`
+	LastLoginAt   *time.Time `db:"last_login_at"`
 }
